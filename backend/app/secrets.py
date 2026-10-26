@@ -1,9 +1,7 @@
-"""Secrets access: AWS Secrets Manager with .env fallback.
+"""Secrets access: AWS Secrets Manager ONLY (no .env key fallback).
 
-Resolution order for a key:
-1. Explicit env var (e.g. MODEL_API_KEY in .env / shell).
-2. AWS Secrets Manager (secret name from *_SECRET_NAME, region from AWS_REGION),
-   lazy boto3 client so local dev without AWS still works.
+Model keys resolve via AwsSecretManager against MODEL_SECRET_NAME
+(default "Muse_API_KEY_TEST") in AWS_REGION (default us-west-2).
 """
 
 from __future__ import annotations
@@ -13,57 +11,51 @@ import os
 from functools import lru_cache
 
 
-class AwsSecretManager:
-    """Minimal Secrets Manager client (no boto3 import at module load)."""
-
+# User-supplied AwsSecretManager below is verbatim; exempt from style rules.
+# ruff: noqa: UP004, TRY002, BLE001
+class AwsSecretManager(object):
     __slots__ = ["_session", "client"]
 
-    def __init__(self, region_name: str = "us-west-2"):
-        import boto3  # local import: optional dependency
+    def __init__(self):
+        import boto3  # local import: keep boto3 optional at module load
 
         self._session = boto3.session.Session()
         self.client = self._session.client(
-            service_name="secretsmanager", region_name=region_name
+            service_name="secretsmanager", region_name="us-west-2"
         )
 
-    def get_secrets(self, secret_name: str = "") -> dict:
+    def get_secrets(self, secret_name=""):
         try:
             if secret_name == "":
-                raise ValueError("Secret Name cannot be Null")
-            resp = self.client.get_secret_value(SecretId=secret_name)
-            if "SecretString" in resp:
-                raw = resp["SecretString"]
-                try:
-                    secret = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    secret = raw  # plaintext secret: the value itself
-                return {"status": 200, "error": {}, "data": {"message": secret}}
-            return {"status": -1, "error": {"message": "No SecretString found"}}
-        except Exception as e:  # noqa: BLE001 — surfaced to caller as data
+                raise Exception("Secret Name cannot be Null ")
+            get_secret_value_response = self.client.get_secret_value(
+                SecretId=secret_name
+            )
+            if "SecretString" in get_secret_value_response:
+                secret = get_secret_value_response["SecretString"]
+                secret = json.loads(secret)
+                return {
+                    "status": 200,
+                    "error": {},
+                    "data": {"message": secret},
+                }
+        except Exception as e:
             return {"status": -1, "error": {"message": str(e)}}
 
-    def get_secret(self, secret_name: str, secret_key: str = "") -> str | dict:
+    # create a function that returns specific secret
+    def get_secret(self, secret_name, secret_key):
         try:
             response = self.client.get_secret_value(SecretId=secret_name)
-            raw = response["SecretString"]
-            try:
-                secrets = json.loads(raw)
-            except (json.JSONDecodeError, TypeError):
-                return raw  # plaintext secret is the value itself
-            if isinstance(secrets, dict):
-                if secret_key:
-                    return secrets[secret_key]
-                if len(secrets) == 1:
-                    return next(iter(secrets.values()))
-                return secrets
-            return secrets
-        except Exception as e:  # noqa: BLE001 — surfaced to caller as data
+            secrets = json.loads(response["SecretString"])
+            secret = secrets[secret_key]
+            return secret
+        except Exception as e:
             return {"status": -1, "error": {"message": str(e)}}
 
 
 @lru_cache(maxsize=32)
-def _fetch_secret(secret_name: str, region: str) -> dict | None:
-    mgr = AwsSecretManager(region_name=region)
+def _fetch_secret(secret_name: str) -> dict | str | None:
+    mgr = AwsSecretManager()
     result = mgr.get_secrets(secret_name)
     if result.get("status") == 200:
         return result["data"]["message"]
@@ -71,51 +63,56 @@ def _fetch_secret(secret_name: str, region: str) -> dict | None:
 
 
 def resolve_secret(
-    env_key: str,
-    secret_name_env: str = "",
+    secret_name_env: str = "MODEL_SECRET_NAME",
     secret_key: str = "",
-    default_region: str = "us-west-2",
+    default_secret: str = "Muse_API_KEY_TEST",
 ) -> str | None:
-    """Return secret value: env var first, then Secrets Manager JSON key."""
-    direct = os.environ.get(env_key)
-    if direct:
-        return direct
-    region = os.environ.get("AWS_REGION", default_region)
-    secret_name = os.environ.get(secret_name_env, "") if secret_name_env else ""
-    if not secret_name or not secret_key:
+    """Return the model key via AwsSecretManager ONLY (no env key fallback)."""
+    secret_name = os.environ.get(secret_name_env, "") or default_secret
+    if not secret_name:
         return None
     try:
-        payload = _fetch_secret(secret_name, region)
-    except Exception:  # noqa: BLE001 — missing creds/boto3: fall through to None
-        return None
-    if isinstance(payload, dict):
-        value = payload.get(secret_key)
+        if secret_key:
+            value = AwsSecretManager().get_secret(secret_name, secret_key)
+        else:
+            payload = _fetch_secret(secret_name)
+            if isinstance(payload, dict):
+                if len(payload) == 1:
+                    value = next(iter(payload.values()))
+                else:
+                    return None
+            else:
+                value = payload
+        if isinstance(value, dict) and "status" in value:
+            return None
         return str(value) if value is not None else None
-    return None
+    except Exception:
+        return None
 
 
 def resolve_named_secret(
     secret_name: str,
     secret_key: str = "",
-    default_region: str = "us-west-2",
 ) -> str | None:
-    """Fetch a secret by name; works for JSON or plaintext SecretString.
+    """Fetch a secret by name via AwsSecretManager.
 
-    Empty secret_key means the secret value itself is the key.
+    Empty secret_key + single-key JSON (or plaintext) means the value itself
+    is the key. Kept for backwards-compat; prefers resolve_secret().
     """
-    region = os.environ.get("AWS_REGION", default_region)
     try:
-        payload = _fetch_secret(secret_name, region)
-    except Exception:  # noqa: BLE001 — missing creds/boto3: fall through to None
-        return None
-    if payload is None:
-        return None
-    if isinstance(payload, dict):
         if secret_key:
-            value = payload.get(secret_key)
-            return str(value) if value is not None else None
-        if len(payload) == 1:
-            value = next(iter(payload.values()))
-            return str(value) if value is not None else None
+            value = AwsSecretManager().get_secret(secret_name, secret_key)
+        else:
+            payload = _fetch_secret(secret_name)
+            if isinstance(payload, dict):
+                if len(payload) == 1:
+                    value = next(iter(payload.values()))
+                else:
+                    return None
+            else:
+                value = payload
+        if isinstance(value, dict) and "status" in value:
+            return None
+        return str(value) if value is not None else None
+    except Exception:
         return None
-    return str(payload)
