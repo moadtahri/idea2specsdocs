@@ -266,10 +266,10 @@ async def chat(body: ChatRequest):
     config = {"configurable": {"thread_id": project.thread_id}}
 
     async def gen():
-        with scoped_env(pdir):
-            agent, checkpointer_cm = await build_agent(pdir, db_path)
-            last_todos: list = []
-            try:
+        try:
+            with scoped_env(pdir):
+                agent, checkpointer_cm = await build_agent(pdir, db_path)
+                last_todos: list = []
                 if body.resume is not None:
                     logger.info(
                         "[%s] resume with %d decision(s)",
@@ -452,11 +452,14 @@ async def chat(body: ChatRequest):
                 store.touch_project(body.project_id)
                 logger.info("[%s] done", body.project_id[:8])
                 yield _sse({"type": "done", "thread_id": project.thread_id})
-            except Exception as e:
-                logger.exception("[%s] agent run failed", body.project_id[:8])
-                yield _sse({"type": "error", "detail": f"Agent failed: {e}"})
-            finally:
                 await checkpointer_cm.__aexit__(None, None, None)
+        except Exception as e:
+            logger.exception("[%s] setup or agent run failed", body.project_id[:8])
+            try:
+                await checkpointer_cm.__aexit__(None, None, None)
+            except (NameError, RuntimeError):
+                pass  # CM never entered — nothing to close
+            yield _sse({"type": "error", "detail": f"Agent failed: {e}"})
 
     return EventSourceResponse(gen(), media_type="text/event-stream")
 
