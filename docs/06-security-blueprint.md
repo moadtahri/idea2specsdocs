@@ -11,6 +11,8 @@ XSS via rendered agent markdown, oversized payloads, secret leakage, dependency 
 ## 2. Controls (Binding)
 
 - C1: Backend MUST enforce Pydantic limits (chat message ≤ 8000 chars, title ≤ 200, doc slug allowlist).
+- C1b: Uploads MUST enforce 10 MB cap + content-type allowlist (text/md/json/csv, pdf, docx, audio);
+  filenames sanitized to basename; served files NEVER executed.
 - C2: Agent filesystem tools MUST be scoped to `projects/<project_id>/` via backend permissions;
   interrupt on any write outside scope.
 - C3: Doc writes/overwrites REQUIRE HITL approval (`interrupt_on` write_file/edit_file); UI shows diff/args.

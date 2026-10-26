@@ -26,6 +26,20 @@ export interface DocContent {
 
 export type ChatMsg = { role: 'user' | 'agent'; text: string; source?: string };
 
+export interface AttachmentMeta {
+  attachment_id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  text_preview: string;
+  created_at: string;
+}
+
+export interface TodoItem {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
 export interface ActionRequestItem {
   name: string;
   args: Record<string, unknown>;
@@ -39,8 +53,11 @@ export interface InterruptEvent {
 
 export type StreamEvent =
   | { type: 'token'; source: string; text: string }
+  | { type: 'thought'; source: string; text: string }
+  | { type: 'step'; source: string; node: string }
   | { type: 'tool_call'; source: string; name: string; args_preview: string }
   | { type: 'subagent'; status: string; name: string }
+  | { type: 'todos'; todos: TodoItem[] }
   | { type: 'interrupt'; interrupt_id: string; action_requests: ActionRequestItem[]; review_configs: unknown[] }
   | { type: 'doc_updated'; slug: string; title: string }
   | { type: 'custom'; source: string; data: unknown }
@@ -65,18 +82,39 @@ export const api = {
     fetch(`/api/projects/${projectId}/docs`).then(json),
   readDoc: (projectId: string, slug: string): Promise<DocContent> =>
     fetch(`/api/projects/${projectId}/docs/${slug}`).then(json),
+  upload: async (projectId: string, file: File): Promise<AttachmentMeta> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/projects/${projectId}/uploads`, {
+      method: 'POST',
+      body: fd,
+    });
+    return json(res);
+  },
+  transcribe: async (blob: Blob, filename = 'audio.webm'): Promise<{ text: string }> => {
+    const fd = new FormData();
+    fd.append('file', blob, filename);
+    const res = await fetch('/api/transcribe', { method: 'POST', body: fd });
+    return json(res);
+  },
 
   /** POST /api/chat and yield parsed SSE events. */
   async *streamChat(
     projectId: string,
     message: string,
     resume?: { type: string; message?: string; edited_action?: unknown }[],
+    attachmentIds?: string[],
     signal?: AbortSignal,
   ): AsyncGenerator<StreamEvent> {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project_id: projectId, message, resume: resume ?? null }),
+      body: JSON.stringify({
+        project_id: projectId,
+        message,
+        resume: resume ?? null,
+        attachment_ids: attachmentIds ?? [],
+      }),
       signal,
     });
     if (!res.ok || !res.body) throw new Error(`Chat failed: HTTP ${res.status}`);

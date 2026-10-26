@@ -23,7 +23,11 @@
 | T-08 | UI | Backend down | error banner, previous state preserved |
 | T-09 | UI | Reload page | history restored from localStorage |
 | T-10 | UI | Copy + Download .md | clipboard contains headings; file downloads |
+| T-11 | API | POST oversized upload (>10 MB) | 413, no file stored |
+| T-12 | API | POST disallowed type (.exe) | 415, no file stored |
+| T-13 | UI | Attach .md + send | chip shown, agent references file content |
+| T-14 | UI | Dictate via mic (Chrome) | transcript lands in composer input |
 
 ## 3. Exit Criteria
 
-- All T-01…T-10 pass. No `tsc` errors. No `ruff` errors. Manual smoke signed in PR.
+- All T-01…T-14 pass. No `tsc` errors. No `ruff` errors. Manual smoke signed in PR.

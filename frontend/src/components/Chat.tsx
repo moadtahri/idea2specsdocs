@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type ChatMsg, type InterruptEvent } from '../api';
+import { api, type ChatMsg, type InterruptEvent, type TodoItem } from '../api';
 import Approvals from './Approvals';
+import Composer from './Composer';
 import DocViewer from './DocViewer';
+import TodoPanel from './TodoPanel';
+
+interface Thought {
+  source: string;
+  text: string;
+}
 
 export default function Chat({ projectId }: { projectId: string }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [activity, setActivity] = useState<string[]>([]);
+  const [thoughts, setThoughts] = useState<Thought[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [steps, setSteps] = useState<Map<string, number>>(new Map());
   const [pending, setPending] = useState<InterruptEvent | null>(null);
   const [error, setError] = useState('');
   const [docsTick, setDocsTick] = useState(0);
@@ -15,7 +24,7 @@ export default function Chat({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, activity]);
+  }, [messages, activity, thoughts]);
 
   const pushToken = (source: string, text: string) =>
     setMessages((m) => {
@@ -29,12 +38,24 @@ export default function Chat({ projectId }: { projectId: string }) {
   const run = async (
     message: string,
     resume?: { type: string; message?: string }[],
+    attachmentIds: string[] = [],
   ) => {
     setStreaming(true);
     setError('');
     try {
-      for await (const ev of api.streamChat(projectId, message, resume)) {
+      for await (const ev of api.streamChat(projectId, message, resume, attachmentIds)) {
         if (ev.type === 'token') pushToken(ev.source, ev.text);
+        else if (ev.type === 'thought')
+          setThoughts((t) => {
+            const last = t[t.length - 1];
+            if (last && last.source === ev.source) {
+              return [...t.slice(0, -1), { ...last, text: last.text + ev.text }];
+            }
+            return [...t.slice(-9), { source: ev.source, text: ev.text }];
+          });
+        else if (ev.type === 'step')
+          setSteps((s) => new Map(s).set(`${ev.source}:${ev.node}`, (s.get(`${ev.source}:${ev.node}`) ?? 0) + 1));
+        else if (ev.type === 'todos') setTodos(ev.todos);
         else if (ev.type === 'tool_call')
           setActivity((a) => [...a.slice(-19), `⚙ ${ev.source}: ${ev.name}`]);
         else if (ev.type === 'subagent')
@@ -57,12 +78,18 @@ export default function Chat({ projectId }: { projectId: string }) {
     }
   };
 
-  const send = () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setMessages((m) => [...m, { role: 'user', text }]);
-    setInput('');
-    void run(text);
+  const send = (text: string, attachmentIds: string[]) => {
+    if ((!text.trim() && attachmentIds.length === 0) || streaming) return;
+    setMessages((m) => [
+      ...m,
+      {
+        role: 'user',
+        text:
+          text.trim() +
+          (attachmentIds.length > 0 ? ` [${attachmentIds.length} attachment(s)]` : ''),
+      },
+    ]);
+    void run(text, undefined, attachmentIds);
   };
 
   const resolveApproval = (decisions: { type: 'approve' | 'reject' }[]) => {
@@ -71,12 +98,13 @@ export default function Chat({ projectId }: { projectId: string }) {
       ...m,
       { role: 'user', text: `(reviewed writes: ${decisions.map((d) => d.type).join(', ')})` },
     ]);
-    void run('', decisions);
+    void run('', decisions, []);
   };
 
   return (
     <div className="layout">
       <section className="chat">
+        <TodoPanel todos={todos} streaming={streaming} />
         <div className="msgs">
           {messages.length === 0 && (
             <p className="empty">
@@ -90,6 +118,28 @@ export default function Chat({ projectId }: { projectId: string }) {
               <p>{m.text}</p>
             </div>
           ))}
+          {thoughts.length > 0 && (
+            <details className="thoughts" open={streaming}>
+              <summary>
+                💭 agent thinking ({thoughts.length} block{thoughts.length > 1 ? 's' : ''})
+              </summary>
+              {thoughts.slice(-5).map((t, i) => (
+                <div key={i} className="thought">
+                  <small>{t.source}</small>
+                  <p>{t.text.slice(0, 800)}</p>
+                </div>
+              ))}
+            </details>
+          )}
+          {steps.size > 0 && (
+            <div className="steps">
+              {[...steps.entries()].map(([k, n]) => (
+                <span key={k} className="step-chip">
+                  ▸ {k} ×{n}
+                </span>
+              ))}
+            </div>
+          )}
           {activity.length > 0 && (
             <div className="activity">
               {activity.map((a, i) => (
@@ -108,18 +158,7 @@ export default function Chat({ projectId }: { projectId: string }) {
           {streaming && <div className="typing">agent is working…</div>}
           <div ref={bottom} />
         </div>
-        <div className="composer">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send()}
-            placeholder="Type your idea or follow-up…"
-            disabled={streaming || !!pending}
-          />
-          <button onClick={send} disabled={streaming || !!pending || !input.trim()}>
-            Send
-          </button>
-        </div>
+        <Composer projectId={projectId} disabled={streaming || !!pending} onSend={send} />
       </section>
       <DocViewer projectId={projectId} refreshKey={docsTick} />
     </div>

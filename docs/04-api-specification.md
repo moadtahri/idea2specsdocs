@@ -21,19 +21,34 @@
 
 ### 5. `GET /api/projects/{id}/docs/{slug}` → `200 {slug, markdown}`
 
+### 5b. `POST /api/projects/{id}/uploads` → `201 {attachment_id, filename, content_type, size, text_preview, created_at}`
+
+- Multipart form with one `file` field. Guardrails: max 10 MB (`413`), allowlist
+  `text/*`, `application/json`, `pdf`, `doc(x)`, `audio/*` (`415` otherwise).
+- Stored on disk at `projects/<id>/uploads/`, metadata in `app.db:attachments`.
+- Text files inlined (up to 6000 chars) as agent context; pdf/docx best-effort extraction.
+
+### 5c. `POST /api/transcribe` → `200 {text}`
+
+- Multipart audio blob. Server Whisper (`OPENAI_API_KEY`) when configured,
+  else `501` — UI falls back to on-device Web Speech API dictation.
+
 ### 6. `POST /api/chat` (SSE stream)
 
 - Purpose: send a user message, stream agent run. Body:
 
 ```json
-{ "project_id": "uuid", "message": "string (1-8000)", "resume": null }
+{ "project_id": "uuid", "message": "string (0-8000)", "resume": null, "attachment_ids": ["uuid"] }
 ```
 
 - Resume after interrupt: `{ "project_id": "...", "message": "", "resume": { "decisions": [...] } }`
 - SSE events (`data: <json>\n\n`):
-  - `{ "type": "token", "source": "main|<subagent>", "text": "..." }`
+  - `{ "type": "token", "source": "main|<subagent>", "text": "..." }` — chat reply tokens
+  - `{ "type": "thought", "source": "...", "text": "..." }` — reasoning/thinking blocks
+  - `{ "type": "step", "source": "...", "node": "model|tools|..." }` — graph node completions
   - `{ "type": "tool_call", "source": "...", "name": "...", "args_preview": "..." }`
   - `{ "type": "subagent", "status": "pending|running|complete", "name": "..." }`
+  - `{ "type": "todos", "todos": [{ "content": "...", "status": "pending|in_progress|completed" }] }`
   - `{ "type": "interrupt", "interrupt_id": "...", "action_requests": [...], "review_configs": [...] }`
   - `{ "type": "doc_updated", "slug": "...", "title": "..." }`
   - `{ "type": "done", "thread_id": "..." }` and `{ "type": "error", "detail": "..." }`

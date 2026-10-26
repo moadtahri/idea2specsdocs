@@ -44,6 +44,16 @@ class ChatRequest(BaseModel):
     project_id: str
     message: str = Field(default="", max_length=8000)
     resume: list[ResumeDecision] | None = None
+    attachment_ids: list[str] = Field(default_factory=list, max_length=10)
+
+
+class Attachment(BaseModel):
+    attachment_id: str = Field(default_factory=lambda: str(uuid4()))
+    filename: str
+    content_type: str = ""
+    size: int = 0
+    text_preview: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ActionRequest(BaseModel):

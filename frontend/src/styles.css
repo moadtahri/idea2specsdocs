@@ -58,6 +58,14 @@ button.ghost { background: transparent; border: 1px solid var(--line); color: va
 .typing { color: var(--muted); font-style: italic; }
 .composer { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
 .composer input { flex: 1; }
+.icon-btn { min-width: 2.6rem; font-size: 1.2rem; line-height: 1; padding: 0.55rem 0.6rem; }
+.composer-wrap { margin-top: 0.75rem; }
+.chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.chip { font-size: 0.8rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.2rem 0.3rem 0.2rem 0.7rem; color: var(--muted); }
+.chip button { background: none; color: var(--muted); padding: 0 0.4rem; }
+.rec { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }
+.rec .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: #e5484d; animation: pulse 1s infinite; }
+.rec em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .approvals { border: 1px dashed var(--accent); border-radius: 10px; padding: 0.75rem; }
 .approvals pre { background: #0c0f16; padding: 0.5rem; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; }
 .row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
@@ -65,3 +73,21 @@ button.ghost { background: transparent; border: 1px solid var(--line); color: va
 .docs li button { width: 100%; text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; font-weight: 400; }
 .docs li button.on { border-color: var(--accent); }
 .md { background: #0c0f16; border-radius: 8px; padding: 0.75rem; overflow: auto; max-height: 50vh; white-space: pre-wrap; font-size: 0.85rem; }
+.todos { border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem; margin-bottom: 0.75rem; background: #121627; }
+.todos-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.85rem; margin-bottom: 0.4rem; }
+.bar { height: 6px; border-radius: 4px; background: #0c0f16; overflow: hidden; margin-bottom: 0.5rem; }
+.bar .fill { height: 100%; background: var(--good); transition: width 0.4s; }
+.todos ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; }
+.todos li { display: flex; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.todos li.in_progress { color: var(--text); }
+.todos li.in_progress .ico { color: var(--accent); animation: pulse 1s infinite; }
+.todos li.completed { text-decoration: line-through; opacity: 0.7; }
+.todos li.completed .ico { color: var(--good); }
+@keyframes pulse { 50% { opacity: 0.4; } }
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.thoughts { border: 1px dashed var(--line); border-radius: 10px; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+.thoughts summary { cursor: pointer; color: var(--muted); }
+.thought { margin-top: 0.4rem; color: var(--muted); white-space: pre-wrap; }
+.steps { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.step-chip { font-size: 0.75rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; color: var(--muted); }

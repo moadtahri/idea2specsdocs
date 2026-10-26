@@ -11,7 +11,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .schemas import DOC_SLUGS, DOC_TITLES, DocContent, DocMeta, Project
+from .schemas import DOC_SLUGS, DOC_TITLES, Attachment, DocContent, DocMeta, Project
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BACKEND_DIR / "data"
@@ -36,7 +36,71 @@ def _connect() -> sqlite3.Connection:
             updated_at TEXT NOT NULL
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS attachments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            content_type TEXT NOT NULL DEFAULT '',
+            size INTEGER NOT NULL DEFAULT 0,
+            text_preview TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )"""
+    )
     return conn
+
+
+def _uploads_dir(project_id: str) -> Path:
+    d = PROJECTS_DIR / project_id / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def save_attachment(
+    project_id: str, filename: str, content_type: str, size: int, text_preview: str
+) -> Attachment:
+    att = Attachment(
+        filename=filename,
+        content_type=content_type,
+        size=size,
+        text_preview=text_preview,
+    )
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO attachments (id, project_id, filename, content_type, size, text_preview, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                att.attachment_id,
+                project_id,
+                filename,
+                content_type,
+                size,
+                text_preview,
+                att.created_at.isoformat(),
+            ),
+        )
+    return att
+
+
+def get_attachments(project_id: str, attachment_ids: list[str]) -> list[Attachment]:
+    if not attachment_ids:
+        return []
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM attachments WHERE project_id = ? AND id IN ({','.join('?' * len(attachment_ids))})",
+            (project_id, *attachment_ids),
+        ).fetchall()
+    return [
+        Attachment(
+            attachment_id=r["id"],
+            filename=r["filename"],
+            content_type=r["content_type"],
+            size=r["size"],
+            text_preview=r["text_preview"],
+            created_at=datetime.fromisoformat(r["created_at"]),
+        )
+        for r in rows
+    ]
 
 
 def _docs_dir(project_id: str) -> Path:

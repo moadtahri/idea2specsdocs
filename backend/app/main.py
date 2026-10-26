@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from langchain.messages import AIMessageChunk, ToolMessage
@@ -15,6 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 from . import store
 from .agent.factory import build_agent, scoped_env
 from .schemas import (
+    Attachment,
     ChatRequest,
     DocContent,
     DocMeta,
@@ -24,6 +26,27 @@ from .schemas import (
 
 VERSION = "0.2.0"
 PROJECTS_DIR = Path(__file__).resolve().parent.parent / "projects"
+
+# Upload guardrails (contract §6: C1/C2)
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_CONTENT_TYPES = {
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/json",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "audio/webm",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/wav",
+    "audio/ogg",
+}
+TEXT_PREVIEW_CHARS = 6000
+
+logger = logging.getLogger("idea2specs.chat")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 app = FastAPI(title="idea2specsdocs", version=VERSION)
 
@@ -52,6 +75,45 @@ def _project_dir(project_id: str) -> Path:
 
 def _sse(data: dict) -> str:
     return json.dumps(data)
+
+
+def _extract_thinking(token: AIMessageChunk) -> str:
+    """Pull reasoning text out of a message chunk (provider-dependent shapes)."""
+    parts: list[str] = []
+    blocks = getattr(token, "content_blocks", None)
+    if isinstance(blocks, list):
+        for b in blocks:
+            if isinstance(b, dict) and b.get("type") in (
+                "reasoning",
+                "thinking",
+                "redacted_thinking",
+            ):
+                text = b.get("text") or b.get("thinking") or b.get("reasoning") or ""
+                if text:
+                    parts.append(str(text))
+    extra = getattr(token, "additional_kwargs", None)
+    if isinstance(extra, dict):
+        for key in ("reasoning_content", "thinking"):
+            val = extra.get(key)
+            if isinstance(val, str) and val:
+                parts.append(val)
+    return "".join(parts)
+
+
+def _extract_todos(payload: object) -> list | None:
+    """Pull a todos snapshot out of an updates payload, if present."""
+    if isinstance(payload, dict):
+        todos = payload.get("todos")
+        if isinstance(todos, list):
+            return [
+                {
+                    "content": t.get("content", ""),
+                    "status": t.get("status", "pending"),
+                }
+                for t in todos
+                if isinstance(t, dict)
+            ]
+    return None
 
 
 # ------------------------------------------------------------------ routes
@@ -95,6 +157,107 @@ def get_doc(project_id: str, slug: str) -> DocContent:
     return doc
 
 
+def _extract_text(filename: str, content_type: str, raw: bytes) -> str:
+    """Best-effort text extraction: plain text + markdown + json + csv inline;
+    pdf/docx via installed libs if present, else a stub note for the agent.
+    """
+    name = filename.lower()
+    if content_type.startswith("text/") or content_type == "application/json":
+        return raw.decode("utf-8", errors="replace")
+    if name.endswith(".pdf"):
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(__import__("io").BytesIO(raw))
+            return "\n".join((page.extract_text() or "") for page in reader.pages)
+        except Exception:  # noqa: BLE001 — extraction best-effort, stub on failure
+            return f"[binary pdf: {filename}, text extraction unavailable]"
+    if name.endswith(".docx"):
+        try:
+            import docx
+
+            doc = docx.Document(__import__("io").BytesIO(raw))
+            return "\n".join(p.text for p in doc.paragraphs)
+        except Exception:  # noqa: BLE001 — extraction best-effort, stub on failure
+            return f"[binary docx: {filename}, text extraction unavailable]"
+    if content_type.startswith("audio/") or name.endswith(
+        (".webm", ".mp3", ".mp4", ".wav", ".ogg", ".m4a")
+    ):
+        return "[audio attachment — use /api/transcribe result text instead]"
+    return f"[binary file: {filename} ({content_type}), no text extraction]"
+
+
+@app.post("/api/projects/{project_id}/uploads", status_code=201)
+async def upload_file(
+    project_id: str,
+    file: UploadFile = File(...),  # noqa: B008
+) -> Attachment:
+    _require_project(project_id)
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    ctype = (file.content_type or "").split(";")[
+        0
+    ].strip() or "application/octet-stream"
+    if ctype not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported type: {ctype}")
+    uploads = PROJECTS_DIR / project_id / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(file.filename or "upload").name
+    text = _extract_text(safe_name, ctype, raw)[:TEXT_PREVIEW_CHARS]
+    att = store.save_attachment(
+        project_id,
+        filename=safe_name,
+        content_type=ctype,
+        size=len(raw),
+        text_preview=text,
+    )
+    (uploads / f"{att.attachment_id}_{safe_name}").write_bytes(raw)
+    logger.info(
+        "[%s] 📎 upload %s (%s, %d bytes)",
+        project_id[:8],
+        safe_name,
+        ctype,
+        len(raw),
+    )
+    return att
+
+
+@app.post("/api/transcribe")
+async def transcribe(
+    file: UploadFile = File(...),  # noqa: B008
+) -> dict:
+    """Transcribe an audio blob. Whisper if configured, else 501 with guidance."""
+    ctype = (file.content_type or "").split(";")[0].strip()
+    if not ctype.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="Expected an audio file")
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Audio too large (max 10 MB)")
+    try:
+        from openai import OpenAI
+
+        client = OpenAI()  # OPENAI_API_KEY env; whisper-1
+        import io
+
+        resp = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(file.filename or "audio.webm", io.BytesIO(raw)),
+        )
+        text = resp.text or ""
+        logger.info("🎤 transcribed %d bytes → %d chars", len(raw), len(text))
+        return {"text": text}
+    except Exception as e:
+        logger.warning("transcribe unavailable: %.150s", str(e))
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Server transcription unavailable (needs OPENAI_API_KEY + openai pkg). "
+                "The app falls back to on-device Web Speech API in the browser."
+            ),
+        ) from e
+
+
 @app.post("/api/chat")
 async def chat(body: ChatRequest):
     project = _require_project(body.project_id)
@@ -104,25 +267,50 @@ async def chat(body: ChatRequest):
 
     async def gen():
         with scoped_env(pdir):
-            agent, checkpointer = build_agent(pdir, db_path)
+            agent, checkpointer_cm = await build_agent(pdir, db_path)
+            last_todos: list = []
             try:
                 if body.resume is not None:
+                    logger.info(
+                        "[%s] resume with %d decision(s)",
+                        body.project_id[:8],
+                        len(body.resume),
+                    )
                     stream_input: object = Command(
                         resume={
                             "decisions": [d.model_dump() for d in body.resume],
                         }
                     )
                 else:
-                    if not body.message.strip():
+                    if not body.message.strip() and not body.attachment_ids:
                         yield _sse({"type": "error", "detail": "Empty message"})
                         return
+                    attachments = store.get_attachments(
+                        body.project_id, body.attachment_ids
+                    )
+                    user_text = body.message.strip()
+                    if attachments:
+                        ctx = "\n\n".join(
+                            f"[attached file: {a.filename} ({a.content_type}, {a.size} bytes)]\n{a.text_preview}"
+                            for a in attachments
+                        )
+                        user_text = (
+                            f"{user_text}\n\n--- attached context ---\n{ctx}"
+                            if user_text
+                            else f"Please review these attachments:\n\n{ctx}"
+                        )
+                    logger.info(
+                        "[%s] user: %s",
+                        body.project_id[:8],
+                        user_text[:200],
+                    )
                     stream_input = {
-                        "messages": [{"role": "user", "content": body.message}]
+                        "messages": [{"role": "user", "content": user_text}]
                     }
                 async for ns, mode, data in agent.astream(
                     stream_input,
                     config=config,
-                    stream_mode=["messages", "updates", "custom"],
+                    stream_mode=["messages", "updates", "custom", "values"],
                     subgraphs=True,
                 ):
                     is_sub = any(str(s).startswith("tools:") for s in (ns or ()))
@@ -137,29 +325,53 @@ async def chat(body: ChatRequest):
 
                     if mode == "messages":
                         token, _meta = data
-                        if isinstance(token, AIMessageChunk) and token.content:
-                            if token.tool_call_chunks:
-                                for tc in token.tool_call_chunks:
-                                    if tc.get("name"):
-                                        yield _sse(
-                                            {
-                                                "type": "tool_call",
-                                                "source": source,
-                                                "name": tc["name"],
-                                                "args_preview": str(tc.get("args", ""))[
-                                                    :200
-                                                ],
-                                            }
-                                        )
-                            else:
+                        if isinstance(token, AIMessageChunk):
+                            # Reasoning/thinking blocks (provider-dependent)
+                            thinking = _extract_thinking(token)
+                            if thinking:
+                                logger.info("[%s] 💭 %s", source, thinking[:300])
                                 yield _sse(
                                     {
-                                        "type": "token",
+                                        "type": "thought",
                                         "source": source,
-                                        "text": str(token.content),
+                                        "text": thinking,
                                     }
                                 )
+                            if token.content:
+                                if token.tool_call_chunks:
+                                    for tc in token.tool_call_chunks:
+                                        if tc.get("name"):
+                                            logger.info(
+                                                "[%s] ⚙ %s %s",
+                                                source,
+                                                tc["name"],
+                                                str(tc.get("args", ""))[:150],
+                                            )
+                                            yield _sse(
+                                                {
+                                                    "type": "tool_call",
+                                                    "source": source,
+                                                    "name": tc["name"],
+                                                    "args_preview": str(
+                                                        tc.get("args", "")
+                                                    )[:200],
+                                                }
+                                            )
+                                else:
+                                    yield _sse(
+                                        {
+                                            "type": "token",
+                                            "source": source,
+                                            "text": str(token.content),
+                                        }
+                                    )
                         elif isinstance(token, ToolMessage):
+                            logger.info(
+                                "[%s] ✔ %s → %.150s",
+                                source,
+                                token.name,
+                                str(token.content),
+                            )
                             yield _sse(
                                 {
                                     "type": "tool_call",
@@ -172,6 +384,16 @@ async def chat(body: ChatRequest):
                         if isinstance(data, dict) and "__interrupt__" in data:
                             intr = data["__interrupt__"][0]
                             val = intr.value if hasattr(intr, "value") else intr
+                            names = [
+                                a.get("name")
+                                for a in val.get("action_requests", [])
+                                if isinstance(a, dict)
+                            ]
+                            logger.info(
+                                "[%s] ⏸ interrupt: awaiting approval for %s",
+                                body.project_id[:8],
+                                names,
+                            )
                             yield _sse(
                                 {
                                     "type": "interrupt",
@@ -181,7 +403,20 @@ async def chat(body: ChatRequest):
                                 }
                             )
                         elif isinstance(data, dict):
-                            for node in data:
+                            for node, payload in data.items():
+                                # node-step event: which graph node just ran
+                                logger.info(
+                                    "[%s] ▸ step: %s",
+                                    source,
+                                    node,
+                                )
+                                yield _sse(
+                                    {
+                                        "type": "step",
+                                        "source": source,
+                                        "node": node,
+                                    }
+                                )
                                 if node == "tools":
                                     yield _sse(
                                         {
@@ -190,12 +425,38 @@ async def chat(body: ChatRequest):
                                             "name": source,
                                         }
                                     )
+                                # todo snapshot may ride along on any update
+                                todos = _extract_todos(payload)
+                                if todos is not None and todos != last_todos:
+                                    last_todos = todos
+                                    done = sum(
+                                        1
+                                        for t in todos
+                                        if t.get("status") == "completed"
+                                    )
+                                    logger.info(
+                                        "[%s] ☑ todos %d/%d",
+                                        body.project_id[:8],
+                                        done,
+                                        len(todos),
+                                    )
+                                    yield _sse({"type": "todos", "todos": todos})
+                    elif mode == "values":
+                        if isinstance(data, dict):
+                            todos = data.get("todos")
+                            if isinstance(todos, list) and todos != last_todos:
+                                last_todos = todos
+                                yield _sse({"type": "todos", "todos": todos})
                     elif mode == "custom":
                         yield _sse({"type": "custom", "source": source, "data": data})
                 store.touch_project(body.project_id)
+                logger.info("[%s] done", body.project_id[:8])
                 yield _sse({"type": "done", "thread_id": project.thread_id})
+            except Exception as e:
+                logger.exception("[%s] agent run failed", body.project_id[:8])
+                yield _sse({"type": "error", "detail": f"Agent failed: {e}"})
             finally:
-                checkpointer.conn.close()
+                await checkpointer_cm.__aexit__(None, None, None)
 
     return EventSourceResponse(gen(), media_type="text/event-stream")
 
