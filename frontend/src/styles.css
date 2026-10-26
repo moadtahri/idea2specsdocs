@@ -1,0 +1,67 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1117;
+  --panel: #171b26;
+  --line: #2a3042;
+  --text: #e6e9f2;
+  --muted: #9aa3b8;
+  --accent: #6ea8fe;
+  --good: #57d977;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.app { max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
+header h1 { margin: 0; }
+header p { color: var(--muted); margin: 0.25rem 0 1rem; }
+.projects { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+input, select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+}
+button {
+  background: var(--accent);
+  border: none;
+  color: #0a0f1e;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+.layout { display: grid; grid-template-columns: 1fr 360px; gap: 1rem; }
+.chat, .docs {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+}
+.msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; }
+.msg { border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.8rem; white-space: pre-wrap; }
+.msg.user { background: #1f2942; align-self: flex-end; max-width: 85%; }
+.msg.agent { background: #141927; }
+.msg small { color: var(--muted); }
+.empty { color: var(--muted); }
+.activity { color: var(--muted); font-size: 0.85rem; }
+.error { background: #3a1d1d; border: 1px solid #7a2e2e; border-radius: 8px; padding: 0.6rem; }
+.typing { color: var(--muted); font-style: italic; }
+.composer { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+.composer input { flex: 1; }
+.approvals { border: 1px dashed var(--accent); border-radius: 10px; padding: 0.75rem; }
+.approvals pre { background: #0c0f16; padding: 0.5rem; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; }
+.row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.docs ul { list-style: none; padding: 0; margin: 0 0 0.75rem; display: grid; gap: 0.25rem; }
+.docs li button { width: 100%; text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; font-weight: 400; }
+.docs li button.on { border-color: var(--accent); }
+.md { background: #0c0f16; border-radius: 8px; padding: 0.75rem; overflow: auto; max-height: 50vh; white-space: pre-wrap; font-size: 0.85rem; }
