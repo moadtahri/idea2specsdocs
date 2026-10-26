@@ -11,11 +11,18 @@ export default function App() {
   const refresh = () =>
     api
       .listProjects()
-      .then(setProjects)
+      .then((p) => {
+        setProjects(p);
+        setError('');
+      })
       .catch(() => setError('Backend unreachable — start it with: cd backend && uv run uvicorn app.main:app --reload'));
 
   useEffect(() => {
     void refresh();
+    const t = setInterval(() => {
+      void refresh();
+    }, 10000);
+    return () => clearInterval(t);
   }, []);
 
   const create = async () => {
