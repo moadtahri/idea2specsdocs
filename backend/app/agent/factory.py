@@ -22,7 +22,7 @@ from . import harness
 from .llm import build_fallback_llm, build_llm
 from .prompts import ORCHESTRATOR_PROMPT, REPO_READER, SUBAGENTS
 from .quality_skills import load_skill
-from .requirements import RequirementsGate, SecurityCoverageFeedback
+from .requirements import RequirementsGate, SecurityCoverageFeedback, SpecCheckFeedback
 from .stages import StageMiddleware
 from .tools import (
     PROJECT_DIRECTORY,
@@ -182,6 +182,7 @@ async def build_agent(project_dir: Path, db_path: Path):
                 TodoListMiddleware(),
                 RequirementsGate(),
                 SecurityCoverageFeedback(),
+                SpecCheckFeedback(),
                 StageMiddleware(project_dir),
                 *compaction(model, backend),
             ],

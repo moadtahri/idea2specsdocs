@@ -4,6 +4,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.messages import ToolMessage
 
 from .. import quality_store as qs
+from .. import specs
 from .tools import PROJECT_DIRECTORY
 
 
@@ -100,3 +101,50 @@ class SecurityCoverageFeedback(AgentMiddleware):
             )
             result = result.model_copy(update={"content": content})
         return result
+
+
+class SpecCheckFeedback(AgentMiddleware):
+    """After an approved spec or ticket write, its package-check problems come back in the tool result, so wizi fixes
+    them in the next step rather than at review (spec 07, run 10: specs without `### T<n>` task headings)."""
+
+    async def awrap_tool_call(self, request, handler):
+        result = await handler(request)
+        directory = PROJECT_DIRECTORY.get()
+        call = request.tool_call
+        path = (
+            str(call.get("args", {}).get("file_path", ""))
+            .replace("\\", "/")
+            .lstrip("/")
+        )
+        name = path.removeprefix("specs/")
+        if not (
+            directory
+            and call["name"] in ("write_file", "edit_file")
+            and path.startswith("specs/")
+            and specs.SPEC_FILE.match(name)
+            and isinstance(result, ToolMessage)
+            and result.status != "error"
+        ):
+            return result
+        from .. import package, package_checks
+
+        problems = [
+            finding["message"]
+            for finding in package_checks.findings(
+                package.package_files(directory.name)
+            )
+            if finding["file"] == f".ai/specs/{name}"
+        ]
+        if not problems:
+            return result
+        feedback = (
+            f"\n\nChecks on `/specs/{name}` as the coding agent will receive it: "
+            + "; ".join(problems[:8])
+            + ". Fix these now with edit_file (it pauses on a card); task headings are `### T<n>: <title>`."
+        )
+        content = (
+            result.content + feedback
+            if isinstance(result.content, str)
+            else [*result.content, {"type": "text", "text": feedback}]
+        )
+        return result.model_copy(update={"content": content})

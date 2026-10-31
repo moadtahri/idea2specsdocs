@@ -544,3 +544,51 @@ def test_the_continue_note_fires_once_and_only_in_the_specs_stage(client, projec
         directory, "01-booking-core.md"
     )  # nothing left to write: never sent back
     assert stages.continue_after_save(directory, run) == ""
+
+
+def test_a_saved_spec_comes_back_with_its_check_problems(client, project):
+    import asyncio
+    from types import SimpleNamespace
+
+    from langchain.messages import ToolMessage
+
+    from app.agent.factory import scoped_env
+    from app.agent.requirements import SpecCheckFeedback
+
+    directory = ready_project(client, project)
+    write_spec(directory, "README.md", "1. [01-booking-core.md](01-booking-core.md)\n")
+    write_spec(
+        directory,
+        "01-booking-core.md",
+        "# 01 Booking core\n\n## Tasks\n\n#### Task 1 - Model\n**Do:** x\n",
+    )
+
+    def saved(path):
+        request = SimpleNamespace(
+            tool_call={"name": "write_file", "args": {"file_path": path}, "id": "w"}
+        )
+
+        async def handler(_):
+            return ToolMessage(
+                content=f"Updated file {path}", tool_call_id="w", name="write_file"
+            )
+
+        with scoped_env(directory):
+            return asyncio.run(
+                SpecCheckFeedback().awrap_tool_call(request, handler)
+            ).content
+
+    flagged = saved("/specs/01-booking-core.md")
+    assert (
+        "The spec has no `### T<n>` tasks." in flagged
+        and "task headings are `### T<n>: <title>`" in flagged
+    )
+    write_spec(
+        directory,
+        "01-booking-core.md",
+        SPEC.replace("### T2: Booking route\n**Files:** `app/routes/`\n", ""),
+    )
+    assert (
+        saved("/specs/01-booking-core.md") == "Updated file /specs/01-booking-core.md"
+    )  # clean: untouched
+    assert saved("/docs/prd.md") == "Updated file /docs/prd.md"  # not a spec

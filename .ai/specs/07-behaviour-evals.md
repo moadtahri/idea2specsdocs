@@ -133,5 +133,6 @@ Real Muse model, 2026-10-31. Each run fixed what the one before found.
   app sends it back (at most twice since the last save or user message; the second time "describing it is not
   writing it"). The independent review now decodes JSON-text arguments and logs which fields failed.
 - Run 11 (after all of it): specs 3/3 on every check, 18 of 18 approvals led straight to the next card.
-- Still open: a spec occasionally uses another task-heading format; the package checks catch it as a blocker and the
-  review stage repairs it.
+- Task-heading drift (a spec occasionally used another heading format): now caught at save time. After an approved
+  spec or ticket write, its package-check problems come back in the tool result (`SpecCheckFeedback`, the same
+  pattern as the security-to-QA feedback), so wizi fixes them in the next step. Live check, 1 trial: 4/4.
