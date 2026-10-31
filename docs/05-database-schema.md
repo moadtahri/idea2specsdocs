@@ -1,4 +1,4 @@
-# Database Schema — idea2specsdocs
+# Database Schema — itos
 
 - Status: APPROVED FOR BUILD
 - Date: 2026-10-26

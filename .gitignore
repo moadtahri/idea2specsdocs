@@ -3,15 +3,21 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.build-cache/
 backend/.venv/
 backend/data/*.db
 backend/data/*.db-*
+backend/data/*.log
+backend/data/*.bundle-readable.md
 backend/projects/
+backend/evals/results/
 backend/.env
+.env
 
 # ---> Node
 frontend/node_modules/
 frontend/dist/
+frontend/tests/artifacts/
 
 # ---> Editors / OS
 .vscode/

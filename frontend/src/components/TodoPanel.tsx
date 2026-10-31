@@ -11,7 +11,7 @@ export default function TodoPanel({
     if (!streaming) return null;
     return (
       <div className="todos">
-        <span className="spin">⟳</span> agent is creating a plan…
+        <span className="spin">⟳</span> wizi is preparing your request…
       </div>
     );
   }
@@ -22,7 +22,7 @@ export default function TodoPanel({
   return (
     <div className="todos">
       <div className="todos-head">
-        <strong>Agent plan</strong>
+        <strong>wizi’s plan</strong>
         <span>
           {done}/{todos.length} · {pct}%
         </span>

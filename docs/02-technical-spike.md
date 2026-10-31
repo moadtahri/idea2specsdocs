@@ -1,4 +1,4 @@
-# Technical Spike — idea2specsdocs
+# Technical Spike — itos
 
 - Status: APPROVED FOR BUILD
 - Date: 2026-10-25

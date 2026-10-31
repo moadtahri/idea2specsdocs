@@ -42,6 +42,7 @@ class ResumeDecision(BaseModel):
 
 class ChatRequest(BaseModel):
     project_id: str
+    message_id: str | None = Field(default=None, min_length=1, max_length=100)
     message: str = Field(default="", max_length=8000)
     resume: list[ResumeDecision] | None = None
     attachment_ids: list[str] = Field(default_factory=list, max_length=10)

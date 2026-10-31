@@ -1,4 +1,4 @@
-# Runbook / On-Call Docs — idea2specsdocs
+# Runbook / On-Call Docs — itos
 
 - Status: APPROVED FOR BUILD
 - Date: 2026-10-25
@@ -10,6 +10,19 @@
 - `web`: Vite dev on :5173, proxies `/api` → `http://localhost:8000`.
 
 ## 2. Startup (dev, WSL zsh — two terminals)
+
+For the container stack, run from the repository root:
+
+```sh
+docker compose -f compose.yaml -f compose.aws.yaml up --build -d --wait
+docker compose ps
+docker compose logs -f api web
+```
+
+Open http://localhost:8080. Nginx serves the frontend and proxies `/api`; both
+services have health checks. Use `docker compose down` to stop while retaining data.
+
+For source development without containers:
 
 Terminal 1 — backend (project venv, foreground so logs stream):
 

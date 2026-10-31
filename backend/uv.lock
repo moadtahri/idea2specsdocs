@@ -672,7 +672,7 @@ wheels = [
 ]
 
 [[package]]
-name = "idea2specsdocs-backend"
+name = "itos-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

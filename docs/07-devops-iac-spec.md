@@ -1,4 +1,4 @@
-# DevOps IaC Spec — idea2specsdocs
+# DevOps IaC Spec — itos
 
 - Status: APPROVED FOR BUILD
 - Date: 2026-10-25
@@ -8,30 +8,31 @@
 - `dev`: WSL Ubuntu, `uv run uvicorn` (port 8000) + `npm run dev` (port 5173).
 - `prod` (v0.2): single host — backend container + static frontend served by nginx. No IaC tool in MVP.
 
-## 2. MVP IaC (Binding when `infra/` is created)
+## 2. Docker Compose implementation
 
 ```text
-infra/
-├── docker-compose.yml      # api + web services
-├── backend.Dockerfile      # python:3.12-slim + uv sync
-└── frontend.Dockerfile     # node:22 build → nginx serve
+compose.yaml               # itos API + web services and optional test profile
+compose.aws.yaml           # optional read-only local AWS profile mount
+backend/Dockerfile         # python:3.12-slim + locked uv sync; runtime/test targets
+frontend/Dockerfile        # node:22-alpine build → nginx:stable-alpine
+frontend/nginx.conf        # static SPA + unbuffered /api reverse proxy
 ```
 
-Compose contract:
+Start the stack:
 
-```yaml
-services:
-  api:
-    build: { context: ../backend, dockerfile: ../infra/backend.Dockerfile }
-    ports: ["8000:8000"]
-    environment:
-      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5173}"
-  web:
-    build: { context: ../frontend, dockerfile: ../infra/frontend.Dockerfile }
-    ports: ["8080:80"]
-    environment:
-      VITE_API_URL: "http://localhost:8000"
+```sh
+docker compose -f compose.yaml -f compose.aws.yaml up --build -d --wait
 ```
+
+- Project name and images use `itos`; the assistant is named `wizi`.
+- Only web is published, on localhost:8080 by default (`APP_PORT` overrides it).
+- Nginx serves the frontend and proxies `/api` to `api:8000`, with SSE buffering disabled.
+- Both services run as non-root users and have health checks; web waits for healthy API.
+- Named volumes persist API databases and project files across container recreation.
+- Secrets are fetched at runtime through the supplied AWS module. Local profiles
+  are mounted read-only by the optional AWS override, never copied into images.
+- API uses one worker so its per-project cancellation and deletion state is consistent.
+- `docker compose --profile test run --rm --build api-tests` runs backend tests in the image.
 
 ## 3. CI (v0.2 target, GitHub Actions)
 

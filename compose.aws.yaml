@@ -1,0 +1,10 @@
+# Optional local AWS profile access. Use with: -f compose.yaml -f compose.aws.yaml
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ${AWS_CONFIG_DIR:-${HOME}/.aws}
+        target: /home/app/.aws
+        read_only: true
+        bind:
+          create_host_path: false

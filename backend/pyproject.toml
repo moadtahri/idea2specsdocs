@@ -1,5 +1,5 @@
 [project]
-name = "idea2specsdocs-backend"
+name = "itos-backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -27,3 +27,7 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.ruff.lint.isort]
+# Without this, ruff guesses whether `app` is first-party from the environment, and WSL and Windows disagree.
+known-first-party = ["app"]

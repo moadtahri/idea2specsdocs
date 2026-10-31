@@ -1,4 +1,4 @@
-# Security Blueprint — idea2specsdocs
+# Security Blueprint — itos
 
 - Status: APPROVED FOR BUILD
 - Date: 2026-10-25

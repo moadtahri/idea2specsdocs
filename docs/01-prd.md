@@ -1,4 +1,4 @@
-# PRD — idea2specsdocs (Chat-Agent Handover App)
+# PRD — itos (Handover App with wizi)
 
 - Version: 0.2.0 (Contract — supersedes 0.1.0 template-generator plan)
 - Status: APPROVED FOR BUILD

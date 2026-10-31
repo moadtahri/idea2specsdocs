@@ -1,4 +1,4 @@
-# QA Test Plan — idea2specsdocs
+# QA Test Plan — itos
 
 - Status: APPROVED FOR BUILD
 - Date: 2026-10-25

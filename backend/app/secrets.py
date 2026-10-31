@@ -1,14 +1,15 @@
 """Secrets access: AWS Secrets Manager ONLY (no .env key fallback).
 
-Model keys resolve via AwsSecretManager against MODEL_SECRET_NAME
-(default "Muse_API_KEY_TEST") in AWS_REGION (default us-west-2).
+Keys resolve via AwsSecretManager from a shared JSON secret in us-west-2.
+Secret field matching is case-insensitive because existing field names are uppercase.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from functools import lru_cache
+
+DEFAULT_SECRET_NAME = "dev/AppAlpha/secrets"
 
 
 # User-supplied AwsSecretManager below is verbatim; exempt from style rules.
@@ -53,8 +54,8 @@ class AwsSecretManager(object):
             return {"status": -1, "error": {"message": str(e)}}
 
 
-@lru_cache(maxsize=32)
 def _fetch_secret(secret_name: str) -> dict | str | None:
+    """Fetch fresh state so a corrected AWS configuration works on the next retry."""
     mgr = AwsSecretManager()
     result = mgr.get_secrets(secret_name)
     if result.get("status") == 200:
@@ -65,27 +66,32 @@ def _fetch_secret(secret_name: str) -> dict | str | None:
 def resolve_secret(
     secret_name_env: str = "MODEL_SECRET_NAME",
     secret_key: str = "",
-    default_secret: str = "Muse_API_KEY_TEST",
+    default_secret: str = DEFAULT_SECRET_NAME,
 ) -> str | None:
     """Return the model key via AwsSecretManager ONLY (no env key fallback)."""
     secret_name = os.environ.get(secret_name_env, "") or default_secret
     if not secret_name:
         return None
     try:
-        if secret_key:
-            value = AwsSecretManager().get_secret(secret_name, secret_key)
-        else:
-            payload = _fetch_secret(secret_name)
-            if isinstance(payload, dict):
-                if len(payload) == 1:
-                    value = next(iter(payload.values()))
-                else:
-                    return None
+        payload = _fetch_secret(secret_name)
+        if secret_key and isinstance(payload, dict):
+            value = payload.get(secret_key)
+            if value is None:
+                wanted = secret_key.casefold()
+                value = next(
+                    (item for key, item in payload.items() if key.casefold() == wanted),
+                    None,
+                )
+        elif isinstance(payload, dict):
+            if len(payload) == 1:
+                value = next(iter(payload.values()))
             else:
-                value = payload
+                return None
+        else:
+            value = payload
         if isinstance(value, dict) and "status" in value:
             return None
-        return str(value) if value is not None else None
+        return value.strip() if isinstance(value, str) and value.strip() else None
     except Exception:
         return None
 
@@ -113,6 +119,24 @@ def resolve_named_secret(
                 value = payload
         if isinstance(value, dict) and "status" in value:
             return None
-        return str(value) if value is not None else None
+        return value.strip() if isinstance(value, str) and value.strip() else None
     except Exception:
         return None
+
+
+def resolve_openai_api_key() -> str | None:
+    """Resolve transcription credentials through the supplied AWS module only."""
+    return resolve_secret(
+        secret_name_env="OPENAI_SECRET_NAME",
+        secret_key=os.environ.get("OPENAI_SECRET_KEY") or "openai_api_key",
+        default_secret=os.environ.get("MODEL_SECRET_NAME") or DEFAULT_SECRET_NAME,
+    )
+
+
+def resolve_assemblyai_api_key() -> str | None:
+    """Resolve the AssemblyAI key from the supplied shared AWS secret."""
+    return resolve_secret(
+        secret_name_env="ASSEMBLYAI_SECRET_NAME",
+        secret_key=os.environ.get("ASSEMBLYAI_SECRET_KEY") or "ASSEMBLYAI_API_KEY",
+        default_secret=os.environ.get("MODEL_SECRET_NAME") or DEFAULT_SECRET_NAME,
+    )
