@@ -96,11 +96,30 @@ def test_specs_checks_catch_stops_new_choices_and_blockers():
         ),
     )
     assert all(outcome["passed"] is False for outcome in graded.values()), graded
-    assert graded["decides_nothing_new"]["note"] == "sqlalchemy, yaml, requirements.txt"
+    assert graded["decides_nothing_new"]["note"] == (
+        "sqlalchemy in: Models with SQLAlchemy; hours in a YAML file; pip install -r requirements.txt"
+        " | yaml in: Models with SQLAlchemy; hours in a YAML file; pip install -r requirements.txt"
+        " | requirements.txt in: Models with SQLAlchemy; hours in a YAML file; pip install -r requirements.txt"
+    )
     assert (
         graded["continues_after_approval"]["note"]
         == "1/2 approvals led to the next card"
     )
+
+
+def test_what_a_named_choice_needs_is_not_a_new_decision():
+    trial = specs_trial(
+        spec_text="requirements: fastapi, httpx; lint config in pyproject.toml",
+        docs_text="",
+        register_text="",
+    )
+    assert sorted(cases.unnamed_choices(trial)) == ["httpx", "toml"]  # nothing names FastAPI or ruff
+    named = {
+        **trial,
+        "register_text": "Linter: ruff (confirmed)",
+        "docs_text": "FastAPI",
+    }
+    assert cases.unnamed_choices(named) == []
 
 
 def test_a_trial_that_never_got_there_is_not_counted():

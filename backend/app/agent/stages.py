@@ -64,15 +64,18 @@ SAVED_PATH = re.compile(r"(/(?:docs|specs)/[\w.\-/]+?)[`'\".,]?(?:\s|$)")
 
 
 def just_saved(messages: list) -> str:
-    """The document or spec the last tool result saved: the run is resuming right after the user approved it."""
-    last = messages[-1] if messages else None
-    if (
-        isinstance(last, ToolMessage)
-        and last.name in ("write_file", "edit_file")
-        and last.status != "error"
-        and (found := SAVED_PATH.search(str(last.content)))
-    ):
-        return found.group(1)
+    """The document or spec saved by the tool results since wizi's last step: the run resumes right after the user
+    approved it. Every result of that step counts, not only the last: wizi often settles decisions and writes in one
+    step, and then the write is not the final message (spec 07, run 6)."""
+    for message in reversed(messages):
+        if not isinstance(message, ToolMessage):
+            break
+        if (
+            message.name in ("write_file", "edit_file")
+            and message.status != "error"
+            and (found := SAVED_PATH.search(str(message.content)))
+        ):
+            return found.group(1)
     return ""
 
 

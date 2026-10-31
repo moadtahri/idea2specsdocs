@@ -99,7 +99,8 @@ passes each variable explicitly, so add the settings there too.
 **Files:** `docs/03-sad-architecture.md`, `backend/README.md`, `backend/.env.example`, `compose.yaml`, `.env.example`
 **Verify:** Manual: each env setting in `harness.py` and `llm.py` appears in both `.env.example` files and in
 `compose.yaml` with its default; `docker compose config --quiet` passes.
-**Status:** done, 2026-10-30, except `docker compose config` (no Docker in the Windows shell; run it in WSL)
+**Status:** done, 2026-10-30; `docker compose config --quiet` passed 2026-10-31 in WSL, for `compose.yaml` alone and
+with the `compose.aws.yaml` overlay (Docker 29.1.3)
 
 ## Done
 

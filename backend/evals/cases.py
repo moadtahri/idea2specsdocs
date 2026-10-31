@@ -258,21 +258,44 @@ def continues_after_approval(trial: dict) -> Result:
     ), f"{went_on}/{len(trial['continued'])} approvals led to the next card"
 
 
+# What a named choice needs to work belongs to that choice (run 6): FastAPI's test client needs httpx, and ruff reads
+# its settings only from a TOML file. Counted as named only when the choice that needs it is named.
+NEEDED_BY = {"httpx": ("fastapi",), "toml": ("ruff",)}
+
+
 def unnamed_choices(trial: dict) -> list[str]:
     named = f"{trial['docs_text']}\n{trial['register_text']}".casefold()
     used = trial["spec_text"].casefold()
     return [
         term
         for term in CHOICES
-        if re.search(rf"\b{re.escape(term)}\b", used) and term not in named
+        if re.search(rf"\b{re.escape(term)}\b", used)
+        and term not in named
+        and not any(owner in named for owner in NEEDED_BY.get(term, ()))
     ]
+
+
+def where_used(trial: dict, term: str) -> str:
+    """The first spec line naming the term, so a reader can judge wizi against the grader."""
+    pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+    line = next(
+        (
+            line.strip()
+            for line in trial["spec_text"].splitlines()
+            if pattern.search(line)
+        ),
+        "",
+    )
+    return f"{term} in: {line[:160]}"
 
 
 def decides_nothing_new(trial: dict) -> Result:
     if not trial["spec_text"]:
         return None, "no spec written"
     offenders = unnamed_choices(trial)
-    return not offenders, ", ".join(offenders) or "none"
+    return not offenders, " | ".join(
+        where_used(trial, term) for term in offenders
+    ) or "none"
 
 
 def package_has_no_blockers(trial: dict) -> Result:
