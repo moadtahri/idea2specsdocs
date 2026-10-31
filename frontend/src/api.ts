@@ -154,6 +154,8 @@ export const api = {
     fetch(`/api/projects/${projectId}/questionnaire/answers`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markdown }),
     }).then(json),
+  history: (projectId: string): Promise<{ messages: ChatMsg[]; pending: InterruptEvent | null; todos: TodoItem[] }> =>
+    fetch(`/api/projects/${projectId}/history`).then(json),
   listDocs: (projectId: string): Promise<{ docs: DocMeta[] }> =>
     fetch(`/api/projects/${projectId}/docs`).then(json),
   readDoc: (projectId: string, slug: string): Promise<DocContent> =>

@@ -79,6 +79,23 @@ export default function Chat({ projectId }: { projectId: string }) {
 
   useEffect(() => () => request.current?.abort(), []);
 
+  // The conversation lives on the server (spec 08): show it whenever the project opens, in any browser.
+  useEffect(() => {
+    let cancelled = false;
+    api.history(projectId)
+      .then((saved) => {
+        if (cancelled || inFlight.current) return;
+        setMessages((current) => (current.length ? current : saved.messages));
+        setTodos((current) => (current.length ? current : saved.todos));
+        if (saved.pending) {
+          setPending((current) => current ?? saved.pending);
+          setStatus('Waiting for your approval');
+        }
+      })
+      .catch(() => { /* an empty chat is still usable */ });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   useEffect(() => {
     if (!streaming) return;
     const timer = setInterval(() => {

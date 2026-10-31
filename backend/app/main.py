@@ -541,6 +541,29 @@ async def transcribe(
         ) from exc
 
 
+def _decision_line(project_id: str, decisions: list[dict]) -> str:
+    """An approval sent from a card, as the card shows it ("✅ Approved: PRD")."""
+    pending = store.chat_history(project_id)["pending"] or {}
+    names = (
+        ", ".join(
+            store.card_title(str(action.get("args", {}).get("file_path", "")))
+            for action in pending.get("action_requests", [])
+        )
+        or "the draft"
+    )
+    first = decisions[0] if decisions else {}
+    if first.get("type") == "approve":
+        return f"✅ Approved: {names}"
+    return f"✏️ Changes requested for {names}: {first.get('message', '')}".rstrip(": ")
+
+
+@app.get("/api/projects/{project_id}/history")
+def chat_history(project_id: str) -> dict:
+    """The conversation as the user saw it, the card waiting for approval, and the to-dos (spec 08)."""
+    _require_project(project_id)
+    return store.chat_history(project_id)
+
+
 @app.post("/api/chat")
 async def chat(body: ChatRequest):
     project = _require_project(body.project_id)
@@ -577,6 +600,13 @@ async def chat(body: ChatRequest):
                     }
                 )
                 last_todos: list = []
+                # The transcript as the user sees it (spec 08), recorded when the run finishes.
+                shown = body.message.strip()
+                reply: list[str] = []
+                # Each model step is its own message; without a break its first words ran into the last ones
+                # ("…for your salon.Working out…").
+                last_message_id = ""
+                card: dict | None = None
                 waiting = (
                     0  # actions a paused graph waits on, read only for a typed message
                 )
@@ -592,6 +622,10 @@ async def chat(body: ChatRequest):
                                 d.model_dump(exclude_none=True) for d in body.resume
                             ],
                         }
+                    )
+                    shown = _decision_line(
+                        body.project_id,
+                        [d.model_dump(exclude_none=True) for d in body.resume],
                     )
                 else:
                     if not body.message.strip() and not body.attachment_ids:
@@ -624,6 +658,9 @@ async def chat(body: ChatRequest):
                     )
                     user_text = body.message.strip()
                     if attachments:
+                        shown += "\n\nAttached: " + ", ".join(
+                            a.filename for a in attachments
+                        )
                         yield _sse(
                             {
                                 "type": "status",
@@ -695,6 +732,11 @@ async def chat(body: ChatRequest):
                             if not is_sub:
                                 text = message_text(token.content)
                                 if text:
+                                    if token.id and token.id != last_message_id:
+                                        if reply:
+                                            text = "\n\n" + text
+                                        last_message_id = token.id
+                                    reply.append(text)
                                     yield _sse(
                                         {
                                             "type": "token",
@@ -735,14 +777,13 @@ async def chat(body: ChatRequest):
                                 body.project_id[:8],
                                 names,
                             )
-                            yield _sse(
-                                {
-                                    "type": "interrupt",
-                                    "interrupt_id": str(getattr(intr, "id", "")),
-                                    "action_requests": val.get("action_requests", []),
-                                    "review_configs": val.get("review_configs", []),
-                                }
-                            )
+                            card = {
+                                "type": "interrupt",
+                                "interrupt_id": str(getattr(intr, "id", "")),
+                                "action_requests": val.get("action_requests", []),
+                                "review_configs": val.get("review_configs", []),
+                            }
+                            yield _sse(card)
                         elif isinstance(data, dict):
                             for node, payload in data.items():
                                 # node-step event: which graph node just ran
@@ -761,6 +802,8 @@ async def chat(body: ChatRequest):
                                 # The harness's own messages (a turn limit) are not model tokens.
                                 if not is_sub:
                                     for text in _harness_texts(payload):
+                                        text = "\n\n" + text if reply else text
+                                        reply.append(text)
                                         yield _sse(
                                             {
                                                 "type": "token",
@@ -791,13 +834,24 @@ async def chat(body: ChatRequest):
                                         done,
                                         len(todos),
                                     )
+                                    store.set_todos(body.project_id, todos)
                                     yield _sse({"type": "todos", "todos": todos})
                     elif mode == "values":
                         if isinstance(data, dict):
                             todos = data.get("todos")
                             if isinstance(todos, list) and todos != last_todos:
                                 last_todos = todos
+                                store.set_todos(body.project_id, todos)
                                 yield _sse({"type": "todos", "todos": todos})
+                message_id = body.message_id or request_id
+                store.add_chat_messages(
+                    body.project_id,
+                    [
+                        (message_id, "user", shown),
+                        (f"{message_id}-reply", "agent", "".join(reply)),
+                    ],
+                )
+                store.set_pending(body.project_id, card)
                 store.touch_project(body.project_id)
                 logger.info("[%s] done", body.project_id[:8])
                 yield _sse({"type": "done", "thread_id": project.thread_id})

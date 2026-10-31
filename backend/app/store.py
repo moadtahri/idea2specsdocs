@@ -72,6 +72,25 @@ def _connect() -> sqlite3.Connection:
             created_at TEXT NOT NULL
         )"""
     )
+    # The conversation as the user saw it (spec 08): checkpoints are compacted and hold tool traffic.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS chat_messages (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (project_id, message_id)
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS chat_state (
+            project_id TEXT PRIMARY KEY,
+            pending TEXT NOT NULL DEFAULT 'null',
+            todos TEXT NOT NULL DEFAULT '[]'
+        )"""
+    )
     return conn
 
 
@@ -389,8 +408,75 @@ def delete_project(project_id: str) -> bool:
                 "DELETE FROM project_quality WHERE project_id = ?", (project_id,)
             )
         conn.execute("DELETE FROM attachments WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM chat_messages WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM chat_state WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     return True
+
+
+# ------------------------------------------------------------------ chat transcript (spec 08)
+
+
+def add_chat_messages(project_id: str, messages: list[tuple[str, str, str]]) -> None:
+    """Record (message_id, role, text) rows once each: a resend with the same id records nothing new."""
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO chat_messages (project_id, message_id, role, text, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [
+                (project_id, message_id, role, text, _utcnow_iso())
+                for message_id, role, text in messages
+                if text.strip()
+            ],
+        )
+
+
+def _chat_state(conn: sqlite3.Connection, project_id: str) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO chat_state (project_id) VALUES (?)", (project_id,)
+    )
+
+
+def set_pending(project_id: str, pending: dict | None) -> None:
+    with _connect() as conn:
+        _chat_state(conn, project_id)
+        conn.execute(
+            "UPDATE chat_state SET pending = ? WHERE project_id = ?",
+            (json.dumps(pending), project_id),
+        )
+
+
+def set_todos(project_id: str, todos: list) -> None:
+    with _connect() as conn:
+        _chat_state(conn, project_id)
+        conn.execute(
+            "UPDATE chat_state SET todos = ? WHERE project_id = ?",
+            (json.dumps(todos), project_id),
+        )
+
+
+def chat_history(project_id: str) -> dict:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT message_id, role, text FROM chat_messages WHERE project_id = ? ORDER BY seq",
+            (project_id,),
+        ).fetchall()
+        state = conn.execute(
+            "SELECT pending, todos FROM chat_state WHERE project_id = ?", (project_id,)
+        ).fetchone()
+    return {
+        "messages": [
+            {"id": r["message_id"], "role": r["role"], "text": r["text"]} for r in rows
+        ],
+        "pending": json.loads(state["pending"]) if state else None,
+        "todos": json.loads(state["todos"]) if state else [],
+    }
+
+
+def card_title(path: str) -> str:
+    """A card's file as the approval card names it (frontend Approvals.docTitle)."""
+    slug = path.replace("\\", "/").rsplit("/", 1)[-1].removesuffix(".md")
+    return DOC_TITLES.get(slug, slug or "document")
 
 
 # ------------------------------------------------------------------ docs
