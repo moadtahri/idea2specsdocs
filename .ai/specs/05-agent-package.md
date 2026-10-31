@@ -152,6 +152,17 @@ alone or hangs off a spec".)
 **Blocked by:** none
 **Status:** done, 2026-10-31 (165 passed)
 
+### T10: mermaid 12
+
+**Do:** Move the app's diagrams from mermaid 11.17.2 to 12.2.0, which needs KaTeX 0.18 and clears the two low audit
+findings, if `initialize` and `render` still work as `MermaidDiagram.tsx` uses them.
+**Files:** `frontend/package.json`, `frontend/package-lock.json`, `frontend/src/components/MermaidDiagram.tsx`, this
+spec
+**Verify:** `npm run build`; `npm audit --omit=dev` clean; a diagram drawn in the running app with no page errors.
+**Blocked by:** T6
+**Status:** done, 2026-10-31 (build passed; `npm audit --omit=dev`: 0 vulnerabilities, KaTeX 0.18.10; a build-order
+and a decision diagram drawn in the running app: 5 nodes, 3 arrows, no page errors, no source fallback)
+
 ### T5: Package checks (spec 06)
 
 ### T6: Human bundle with Mermaid diagrams
@@ -161,8 +172,7 @@ alone or hangs off a spec".)
 open amber). Added when served, not cached, so a new spec or decision shows at once. The app draws any Mermaid block
 with `mermaid` 11.17.2 (approved 2026-10-31), loaded only when a diagram is on screen, strict security level, dark
 theme; if it cannot draw one, the source shows. `npm audit` (2026-10-31): 2 low, one cause: KaTeX < 0.18.2 (prototype
-pollution) inside mermaid 11; the fix is mermaid 12, a major release 18 days old. Accepted for now: KaTeX only renders
-`$$` maths in a diagram, mermaid runs in strict mode, and diagrams come from itos or wizi. Revisit with mermaid 12.
+pollution) inside mermaid 11; the fix is mermaid 12, a major release 18 days old. Fixed by T10 (mermaid 12).
 **Files:** `backend/app/diagrams.py`, `backend/app/main.py`, `frontend/src/components/Markdown.tsx`,
 `frontend/src/components/MermaidDiagram.tsx`, `frontend/package.json`, `backend/tests/test_diagrams.py`
 **Verify:** `uv run pytest -q tests/test_diagrams.py`; `npm run build`
