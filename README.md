@@ -18,6 +18,12 @@ local **SQLite** so you can resume, update, and ask follow-ups.
 - **Frontend:** React + TS + Vite (Node 22), streaming chat + approvals + doc viewer.
 - **Dev env:** WSL Ubuntu 24.04, zsh.
 
+## Guides
+
+- [User manual](docs/guides/user-manual.md): how to use itos, step by step.
+- [Technical guide](docs/guides/technical-guide.md): how the project is organised and how the parts work together.
+- [itos overview deck](docs/guides/itos-overview.pptx) and [agent package guide](docs/guides/agent-package-guide.pptx).
+
 ## Run with Docker Compose
 
 From the repository root in WSL, start itos with your local AWS profile available
