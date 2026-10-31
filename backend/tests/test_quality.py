@@ -528,3 +528,50 @@ def test_review_arguments_sent_as_json_text_are_decoded():
         and draft.findings[0].citations[0].line == 3
     )
     assert review.decoded("[not json") == "[not json"
+
+
+def test_a_malformed_review_gets_one_corrective_retry(client, project, monkeypatch):
+    # Spec 07 T3: the reviewer sent findings as JSON text closed a brace too early; the review failed every time.
+    complete_brief(client, project)
+    complete_docs(project)
+    good = ReviewDraft(
+        summary="Reviewed.", checks_completed=list(SKILL_IDS), findings=[]
+    )
+    broken = {**good.model_dump(), "findings": '[{"title": "x"}]}, "detail": "y"}]'}
+
+    def reply(args, call_id):
+        return AIMessage(
+            content="",
+            tool_calls=[{"name": "ReviewDraft", "args": args, "id": call_id}],
+        )
+
+    invoke = AsyncMock(
+        side_effect=[reply(broken, "r1"), reply(good.model_dump(), "r2")]
+    )
+    monkeypatch.setattr(
+        review,
+        "build_llm",
+        lambda: SimpleNamespace(
+            bind_tools=lambda *a, **k: SimpleNamespace(ainvoke=invoke)
+        ),
+    )
+    report = client.post(f"/api/projects/{project}/reviews", json={}).json()
+    assert report["status"] == "complete" and invoke.await_count == 2
+    retry = invoke.await_args_list[1].args[0]
+    assert "findings: Input should be a valid list" in str(retry[-1])
+    assert any(
+        getattr(m, "status", "") == "error" and m.tool_call_id == "r1" for m in retry
+    )
+
+    invoke = AsyncMock(
+        side_effect=[reply(broken, "r1"), reply(broken, "r2")]
+    )  # twice wrong: it fails as before
+    monkeypatch.setattr(
+        review,
+        "build_llm",
+        lambda: SimpleNamespace(
+            bind_tools=lambda *a, **k: SimpleNamespace(ainvoke=invoke)
+        ),
+    )
+    failed = client.post(f"/api/projects/{project}/reviews", json={}).json()
+    assert failed["status"] == "failed" and invoke.await_count == 2

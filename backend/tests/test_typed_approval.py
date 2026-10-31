@@ -125,6 +125,9 @@ def test_typed_words_answer_the_waiting_card(client, project, monkeypatch):
         AIMessage(content="Shorter now?"),  # after the change request
         write_prd("w2"),
         AIMessage(content="Saved the PRD."),
+        # Documents remain, so the app sends wizi back after the save, at most twice (stages.continue_after_save).
+        AIMessage(content="Next is the technical spike."),
+        AIMessage(content="Ready when you are."),
     ]
     Scripted.seen.clear()
     monkeypatch.setattr(factory, "build_llm", Scripted)

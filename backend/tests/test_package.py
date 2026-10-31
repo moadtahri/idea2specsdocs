@@ -592,3 +592,35 @@ def test_a_saved_spec_comes_back_with_its_check_problems(client, project):
         saved("/specs/01-booking-core.md") == "Updated file /specs/01-booking-core.md"
     )  # clean: untouched
     assert saved("/docs/prd.md") == "Updated file /docs/prd.md"  # not a spec
+
+
+def test_drafting_is_sent_back_only_right_after_a_saved_document(client, project):
+    from langchain.messages import AIMessage, HumanMessage, ToolMessage
+
+    brief = {field: f"Confirmed {field}" for field in BRIEF_FIELDS}
+    state = client.put(f"/api/projects/{project}/brief", json=brief).json()
+    client.post(
+        f"/api/projects/{project}/brief/approve", json={"revision": state["revision"]}
+    )
+    directory = store.PROJECTS_DIR / project
+    (directory / "docs").mkdir(parents=True, exist_ok=True)
+    (directory / "docs" / "prd.md").write_text("# PRD\n", encoding="utf-8")
+    assert stages.current_stage(directory) == "drafting"
+    saved = ToolMessage(
+        content="Updated file /docs/prd.md", tool_call_id="w1", name="write_file"
+    )
+    stale = AIMessage(content="The PRD draft is waiting on its approval card.")
+    note = stages.continue_after_save(
+        directory, [HumanMessage("Draft the documents"), saved, stale]
+    )
+    assert note == (
+        "[The app: `/docs/prd.md` is saved and no card is waiting. Continue now: write "
+        "`/docs/technical-spike.md`, after one line on what it covers.]"
+    )
+    # Before any document is saved, presenting the plan may end the turn.
+    assert (
+        stages.continue_after_save(
+            directory, [HumanMessage("Draft"), AIMessage(content="Here is the plan.")]
+        )
+        == ""
+    )

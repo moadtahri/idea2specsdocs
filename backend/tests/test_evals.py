@@ -265,3 +265,94 @@ def test_questions_back_checks():
     }
     graded = run.grade(cases.QUESTIONS_BACK, silent)
     assert [o["passed"] for o in graded.values()] == [False, False, False, False]
+
+
+def test_drafting_checks():
+    good = {
+        "carded": [
+            "/docs/prd.md",
+            "/docs/technical-spike.md",
+            "/docs/sad-architecture.md",
+        ],
+        "after_approval": ["Saved the PRD. The next document will pause on its card."],
+        "written": {
+            "prd": "FR-1: book. FR-2: cancel.",
+            "technical-spike": "x",
+            "sad-architecture": "y",
+        },
+    }
+    assert all(o["passed"] for o in run.grade(cases.DRAFTING, good).values())
+    bad = {
+        "carded": ["/docs/prd.md", "/tmp/notes.md"],
+        "after_approval": ["The PRD is still waiting on its card for your decision."],
+        "written": {"prd": "Owners book visits."},
+    }
+    graded = run.grade(cases.DRAFTING, bad)
+    assert [graded[c]["passed"] for c in cases.DRAFTING.checks] == [
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert graded["writes_only_documents"]["note"] == "/tmp/notes.md"
+
+
+def test_review_checks():
+    calls = [
+        {"name": n, "args": {}}
+        for n in ("check_bundle_contracts", "review_bundle", "check_package")
+    ]
+    good = {
+        "turns": [{"text": "Two gaps remain; not ready yet."}],
+        "calls": calls,
+        "review": {"status": "incomplete"},
+        "ready": False,
+    }
+    assert all(o["passed"] for o in run.grade(cases.REVIEW, good).values())
+    bad = {
+        "turns": [{"text": "All good: the bundle is production-ready."}],
+        "calls": calls[:1],
+        "review": {"status": "failed", "errors": ["Review service unavailable"]},
+        "ready": False,
+    }
+    graded = run.grade(cases.REVIEW, bad)
+    assert [graded[c]["passed"] for c in cases.REVIEW.checks] == [False, False, False]
+    assert (
+        graded["runs_the_three_checks"]["note"]
+        == "missing: ['review_bundle', 'check_package']"
+    )
+    honest = {
+        **good,
+        "turns": [
+            {"text": "Independent review: **not ready for production** handover."}
+        ],
+    }
+    assert run.grade(cases.REVIEW, honest)["claims_no_readiness"]["passed"] is True
+
+
+def test_cleanup_checks():
+    good = {
+        "turns": [
+            {"text": "Which behaviour must stay exactly as customers see it today?"}
+        ],
+        "calls": [{"name": "task", "args": {"subagent_type": "repo-reader"}}],
+        "brief": {"revision": "r1", "brief": {"intake": "cleanup"}},
+    }
+    assert all(o["passed"] for o in run.grade(cases.CLEANUP, good).values())
+    bad = {
+        "turns": [{"text": "What colour should the buttons be?"}],
+        "calls": [
+            {
+                "name": "read_file",
+                "args": {"file_path": "/uploads/a/source/app/routes.py"},
+            }
+        ],
+        "brief": {"revision": "r1", "brief": {"intake": "feature"}},
+    }
+    graded = run.grade(cases.CLEANUP, bad)
+    assert [graded[c]["passed"] for c in cases.CLEANUP.checks] == [
+        False,
+        False,
+        False,
+        False,
+    ]

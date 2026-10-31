@@ -231,7 +231,8 @@ def test_every_write_asks_and_only_documents_and_specs_are_written(
         "/docs/prd.md",
         "/specs/README.md",
     ]
-    Scripted.replies[:] = [write(*paths), AIMessage(content="done")]
+    # After the saves the app sends wizi back to the next missing document, at most twice.
+    Scripted.replies[:] = [write(*paths), *(AIMessage(content="done") for _ in range(3))]
     monkeypatch.setattr(factory, "build_llm", Scripted)
     config = {"configurable": {"thread_id": project}}
 

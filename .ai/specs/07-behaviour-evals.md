@@ -17,6 +17,9 @@ per trial, and grades each trial with named checks:
 | `discovery` (02, 03) | asks at most three questions; no writes, todos or domain specialists; uses the supplied vertical; records decisions with at least one waiting on another; a "yes" settles frontier items from the user's words and settles nothing else |
 | `specs` (05, 06) | after an approval the next spec card comes without "continue"; no spec names a library, format or tool the documents and register do not; the package has no check blockers; the stage reaches review |
 | `questions-back` (06) | wizi asks the question a coding agent sent back; the answer settles it in the user's words; the spec is updated on an approval card; the next package's `decisions.md` has the answer |
+| `drafting` (02, 03) | writes only canonical documents; never says a card waits after an approval; the PRD carries `FR-` IDs; three documents saved |
+| `review` (02, 06) | runs the contract checks, the independent review and the package check; the review does not fail; claims no readiness the review did not give |
+| `cleanup` (02, 04) | delegates to `repo-reader`; never reads the source itself; proposes intake `cleanup`; asks what behaviour must be kept |
 | `repo-reader` (04) | wizi delegates to `repo-reader`; never reads the source snapshot itself; its reply uses facts only the code shows; the proposed brief's intake is `feature` |
 
 Results go to `backend/evals/results/<timestamp>.json`; `--compare <file>` prints each check's change. Graders are
@@ -75,6 +78,18 @@ read reply text cut to 400 characters (only the saved results are cut now).
 **Verify:** Manual: `uv run python -m evals.run --trials 2` completes; results file written; projects deleted.
 **Blocked by:** T1
 **Status:** done, 2026-10-31 (below)
+
+### T3: Drafting, review and cleanup cases
+
+**Do:** Three more cases. `drafting` (approved brief, no documents; approve each card for up to three documents):
+writes only canonical `/docs/<slug>.md`, never says a card waits after an approval, the PRD carries `FR-` IDs.
+`review` (nine documents and a spec plan seeded): calls `check_bundle_contracts`, `review_bundle` and
+`check_package`; the independent review completes; no write without a card. `cleanup` (a source ZIP and a request
+to clean it up): delegates to `repo-reader`, proposes intake `cleanup`, asks what behaviour must be kept.
+**Files:** `backend/evals/cases.py`, `backend/evals/fixtures.py`, `backend/tests/test_evals.py`, this spec
+**Verify:** `uv run pytest -q tests/test_evals.py`; live: two trials of each, recorded below.
+**Blocked by:** T1
+**Status:** done, 2026-10-31 (175 passed; live results below)
 
 ## Done
 
@@ -136,3 +151,11 @@ Real Muse model, 2026-10-31. Each run fixed what the one before found.
 - Task-heading drift (a spec occasionally used another heading format): now caught at save time. After an approved
   spec or ticket write, its package-check problems come back in the tool result (`SpecCheckFeedback`, the same
   pattern as the security-to-QA feedback), so wizi fixes them in the next step. Live check, 1 trial: 4/4.
+- T3, 2026-10-31 (2 trials each). cleanup: 2/2 on every check. drafting, first run: once wizi said the approved PRD
+  "is waiting on its approval card" and stopped; the continue-after-save enforcement now covers drafting too (only
+  right after a saved document, so a turn that presents the plan can still end); second run: every approval led
+  straight into the next document, 3 documents saved 2/2, PRD with FR- IDs 2/2. review, first run: the independent
+  review failed 2/2: its 17 KB findings argument was JSON text with a brace closed too early. Now the reviewer is
+  asked for an array of at most 12 findings and gets one corrective retry with the exact error; second run: the
+  review completed 2/2, all three checks ran 2/2. The one readiness flag was "not ready for production handover",
+  the honest answer: the grader now ignores a negated phrase.

@@ -91,19 +91,39 @@ def just_saved(messages: list) -> str:
     return ""
 
 
+def next_to_write(project_dir: Path, stage: Stage) -> str:
+    """The next file the stage still needs, as a path wizi writes; empty when none is missing."""
+    if stage == "specs":
+        left = specs.missing(project_dir)
+        return f"/specs/{left[0]}" if left else ""
+    if stage == "drafting":
+        docs = project_dir / "docs"
+        left = [slug for slug in DOC_SLUGS if not (docs / f"{slug}.md").is_file()]
+        return f"/docs/{left[0]}.md" if left else ""
+    return ""
+
+
 def continue_after_save(project_dir: Path, messages: list) -> str:
-    """When wizi ends its turn in the specs stage with specs still to write, no card waiting and no decision open for
-    the user, the note that sends it back to write the next one; empty otherwise. A turn that ends on an open
-    decision is a real stop. At most MAX_NUDGES since the latest save or user message, so it can never loop."""
+    """When wizi ends its turn with files still to write, no card waiting and no decision open for the user, the note
+    that sends it back to write the next one; empty otherwise. A turn that ends on an open decision is a real stop.
+
+    Specs stage: any such end (run 10: "Writing the plan file now:" before any file existed). Drafting stage: only
+    right after a saved document (spec 07 T3: "the PRD draft is waiting on its approval card" after it was saved), so
+    a turn that presents the plan before the first document can still end. At most MAX_NUDGES since the latest save
+    or user message, so it can never loop."""
     last = messages[-1] if messages else None
+    stage = current_stage(project_dir)
     if (
         not isinstance(last, AIMessage)
         or last.tool_calls
-        or current_stage(project_dir) != "specs"
+        or stage not in ("specs", "drafting")
     ):
         return ""
-    left = specs.missing(project_dir)
-    if not left or qs.frontier(qs.items(project_dir.name)):
+    target = next_to_write(project_dir, stage)
+    if not target or qs.frontier(qs.items(project_dir.name)):
+        return ""
+    saved = just_saved(messages[:-1])
+    if stage == "drafting" and not saved:
         return ""
     sent = 0
     for message in reversed(messages):
@@ -118,16 +138,14 @@ def continue_after_save(project_dir: Path, messages: list) -> str:
     if sent >= MAX_NUDGES:
         return ""
     if sent:
-        # Run 9: after the first note wizi wrote its one line on the next spec and ended without writing it.
-        return f"[The app: describing `/specs/{left[0]}` is not writing it. Call write_file for `/specs/{left[0]}` now.]"
-    saved = just_saved(messages[:-1])
+        # Run 9: after the first note wizi wrote its one line on the next file and ended without writing it.
+        return f"[The app: describing `{target}` is not writing it. Call write_file for `{target}` now.]"
     done = (
         f"`{saved}` is saved and no card is waiting. "
         if saved
         else "Nothing is waiting on the user. "
     )
-    # Run 10: wizi also ended on "Writing the plan file now:" before any file existed.
-    return f"[The app: {done}Continue now: write `/specs/{left[0]}`, after one line on what it covers.]"
+    return f"[The app: {done}Continue now: write `{target}`, after one line on what it covers.]"
 
 
 def stage_text(project_dir: Path, messages: list | None = None) -> str:

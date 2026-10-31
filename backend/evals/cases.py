@@ -527,4 +527,256 @@ QUESTIONS_BACK = Case(
     },
 )
 
-CASES = {case.name: case for case in (DISCOVERY, SPECS, REPO_READER, QUESTIONS_BACK)}
+# ------------------------------------------------------------------ drafting (02, 03 T5)
+
+DRAFT_TARGET = 3  # documents to see saved; all nine would cost a full project's worth of model calls per trial
+# A claim, after an approval, that the just-approved draft still waits (the bug the browser pass found).
+STALE_CARD = re.compile(
+    r"\b(?:is|are|still) (?:waiting|pending) (?:on|for) (?:its|the|your) (?:review |approval )?(?:card|approval)",
+    re.IGNORECASE,
+)
+
+
+def run_drafting(client: httpx.Client, project: str) -> dict:
+    _new_brief(client, project)
+    docs = store.PROJECTS_DIR / project / "docs"
+    turns = [
+        chat(
+            client,
+            project,
+            "The brief is approved. Draft the handover documents, starting with the PRD.",
+        )
+    ]
+    after_approval = []  # the text of each turn that followed an approval and asked for nothing new
+    answers = 0
+    for _ in range(MAX_STEPS):
+        saved = [p for p in docs.glob("*.md")] if docs.is_dir() else []
+        last = turns[-1]
+        if last.errors or len(saved) >= DRAFT_TARGET:
+            break
+        if last.interrupts:
+            nxt = approve(client, project, last)
+            turns.append(nxt)
+            if not nxt.interrupts:
+                after_approval.append(nxt.text)
+            continue
+        if answers < MAX_ANSWERS:
+            answers += 1
+            turns.append(chat(client, project, YES))
+            continue
+        break
+    written = (
+        {p.stem: p.read_text(encoding="utf-8") for p in docs.glob("*.md")}
+        if docs.is_dir()
+        else {}
+    )
+    return {
+        "turns": [turn.summary() for turn in turns],
+        "carded": [a["path"] for turn in turns for a in turn.interrupts],
+        "after_approval": after_approval,
+        "written": written,
+    }
+
+
+def writes_only_documents(trial: dict) -> Result:
+    from app.schemas import DOC_SLUGS
+
+    stray = [
+        path
+        for path in trial["carded"]
+        if path.removeprefix("/docs/").removesuffix(".md") not in DOC_SLUGS
+    ]
+    return bool(trial["carded"]) and not stray, ", ".join(
+        stray
+    ) or f"{len(trial['carded'])} cards, all documents"
+
+
+def no_stale_card_claim(trial: dict) -> Result:
+    if not trial["after_approval"]:
+        return None, "no turn ended right after an approval"
+    stale = [
+        m.group(0) for text in trial["after_approval"] if (m := STALE_CARD.search(text))
+    ]
+    return not stale, "; ".join(stale) or "none"
+
+
+def prd_has_requirement_ids(trial: dict) -> Result:
+    prd = trial["written"].get("prd")
+    if prd is None:
+        return None, "no PRD saved"
+    ids = sorted(set(re.findall(r"\bFR-\d+", prd)))
+    return bool(ids), ", ".join(ids[:6]) or "no FR- IDs"
+
+
+def saves_several_documents(trial: dict) -> Result:
+    return len(
+        trial["written"]
+    ) >= DRAFT_TARGET, f"{len(trial['written'])} saved: {sorted(trial['written'])}"
+
+
+DRAFTING = Case(
+    "drafting",
+    run_drafting,
+    {
+        "writes_only_documents": writes_only_documents,
+        "no_stale_card_claim": no_stale_card_claim,
+        "prd_has_requirement_ids": prd_has_requirement_ids,
+        "saves_several_documents": saves_several_documents,
+    },
+)
+
+
+# ------------------------------------------------------------------ review (02, 06)
+
+READY_CLAIM = re.compile(
+    r"\b(?:production[- ]ready|ready for production|ready to ship)\b", re.IGNORECASE
+)
+
+
+def run_review(client: httpx.Client, project: str) -> dict:
+    _new_brief(client, project)
+    directory = store.PROJECTS_DIR / project
+    (directory / "docs").mkdir(parents=True, exist_ok=True)
+    for slug, text in fixtures.DOCS.items():
+        (directory / "docs" / f"{slug}.md").write_text(text, encoding="utf-8")
+    folder = specs.specs_dir(directory)
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, text in (
+        ("README.md", RETURN_PLAN),
+        ("agents.md", "# Conventions\n"),
+        ("01-booking-core.md", RETURN_SPEC),
+    ):
+        (folder / name).write_text(text, encoding="utf-8")
+    turn = chat(
+        client,
+        project,
+        "Everything is written. Review the whole bundle and tell me what is missing.",
+    )
+    state = quality(client, project)
+    return {
+        "turns": [turn.summary()],
+        "calls": main_calls(project),
+        "review": state.get("last_review") or {},
+        "ready": state.get("ready_for_production")
+        or state.get("ready_for_implementation"),
+    }
+
+
+def runs_the_three_checks(trial: dict) -> Result:
+    names = {call["name"] for call in trial["calls"]}
+    wanted = ["check_bundle_contracts", "review_bundle", "check_package"]
+    missing = [name for name in wanted if name not in names]
+    return not missing, f"missing: {missing}" if missing else "all three"
+
+
+def review_does_not_fail(trial: dict) -> Result:
+    review = trial["review"]
+    if not review:
+        return False, "no review recorded"
+    return (
+        review.get("status") != "failed",
+        f"status {review.get('status')}; {'; '.join(review.get('errors', [])[:2])}",
+    )
+
+
+NEGATION = re.compile(
+    r"\b(?:not|n't|never|no longer|isn't|aren't)\W+(?:\w+\W+){0,2}$", re.IGNORECASE
+)
+
+
+def claims_no_readiness(trial: dict) -> Result:
+    text = trial["turns"][0]["text"]
+    # "not ready for production" is the honest answer, not a claim (T3 run 2).
+    claim = next(
+        (
+            m
+            for m in READY_CLAIM.finditer(text)
+            if not NEGATION.search(text[max(0, m.start() - 40) : m.start()])
+        ),
+        None,
+    )
+    honest = not claim or bool(trial["ready"])
+    return honest, claim.group(0) if claim else "none"
+
+
+REVIEW = Case(
+    "review",
+    run_review,
+    {
+        "runs_the_three_checks": runs_the_three_checks,
+        "review_does_not_fail": review_does_not_fail,
+        "claims_no_readiness": claims_no_readiness,
+    },
+)
+
+
+# ------------------------------------------------------------------ cleanup mode (02, 04)
+
+KEEP_WORDS = (
+    "keep",
+    "must not change",
+    "must stay",
+    "preserve",
+    "behaviour",
+    "behavior",
+    "unchanged",
+)
+
+
+def run_cleanup(client: httpx.Client, project: str) -> dict:
+    upload = client.post(
+        f"/api/projects/{project}/uploads",
+        files={"file": ("salon.zip", fixtures.source_zip(), "application/zip")},
+    )
+    upload.raise_for_status()
+    turn = chat(
+        client,
+        project,
+        "This is our salon booking app. The code has grown messy and we want it cleaned up. Look at the code first, "
+        "then ask only what you need from us.",
+        attachment_ids=(upload.json()["attachment_id"],),
+    )
+    return {
+        "turns": [turn.summary()],
+        "calls": main_calls(project),
+        "brief": quality(client, project)["brief"],
+    }
+
+
+def intake_is_cleanup(trial: dict) -> Result:
+    brief = trial["brief"]
+    if not brief.get("revision"):
+        return None, "no brief proposed yet"
+    intake = brief.get("brief", {}).get("intake")
+    return intake == "cleanup", f"intake {intake}"
+
+
+def asks_what_must_be_kept(trial: dict) -> Result:
+    text = trial["turns"][0]["text"].casefold()
+    found = [word for word in KEEP_WORDS if word in text]
+    return bool(found), ", ".join(found) or "none"
+
+
+CLEANUP = Case(
+    "cleanup",
+    run_cleanup,
+    {
+        "delegates_to_reader": delegates_to_reader,
+        "never_reads_the_source_itself": never_reads_the_source_itself,
+        "intake_is_cleanup": intake_is_cleanup,
+        "asks_what_must_be_kept": asks_what_must_be_kept,
+    },
+)
+
+CASES = {
+    case.name: case
+    for case in (
+        DISCOVERY,
+        SPECS,
+        REPO_READER,
+        QUESTIONS_BACK,
+        DRAFTING,
+        REVIEW,
+        CLEANUP,
+    )
+}
