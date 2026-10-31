@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
-import { api, type ChatMsg, type InterruptEvent, type TodoItem } from '../api';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { api, type ChatMsg, type InterruptEvent, type ProjectSummary, type TodoItem } from '../api';
 import Approvals from './Approvals';
 import Composer from './Composer';
 import DocViewer from './DocViewer';
 import QualityPanel from './QualityPanel';
-import Markdown from './Markdown';
 import TodoPanel from './TodoPanel';
+import { WiziFace, type FaceState } from './WiziFace';
+import { ChatToolsContext, retryMessage, type ChatTools } from './chat/chatTools';
+import { ReaderPane } from './chat/ReaderPane';
+import { SideToggle } from './chat/SidePanel';
+import { ThinkingLine } from './chat/ThinkingLine';
+import { useReader } from './chat/useReader';
+import { useSidePanel } from './chat/useSidePanel';
+import { WiziReply } from './chat/WiziReply';
 
 interface ChatAttempt {
   userMessageId: string;
@@ -56,7 +63,14 @@ const ACTIVITY_LABELS: Record<string, string> = {
   edit_file: '📝 Drafting changes for your review',
 };
 
-export default function Chat({ projectId }: { projectId: string }) {
+// The chat, laid out as Kanya's (spec 09): header, conversation with wizi's orb, the live line, the card inline, the
+// boxed composer; the side panel (plan, brief and decisions, documents) and the reader on the right.
+export default function Chat({ projectId, project, onRenamed, onDeleted }: {
+  projectId: string;
+  project: ProjectSummary | null;
+  onRenamed: (updated: ProjectSummary) => void;
+  onDeleted: (projectId: string) => void;
+}) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [activity, setActivity] = useState<string[]>([]);
@@ -64,13 +78,20 @@ export default function Chat({ projectId }: { projectId: string }) {
   const [pending, setPending] = useState<InterruptEvent | null>(null);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('Ready for your message');
+  // The server's own progress line ("Preparing 2 attached file(s)…"), shown in the live line until wizi acts.
+  const [progress, setProgress] = useState('');
   const [elapsed, setElapsed] = useState(0);
   const [quietSeconds, setQuietSeconds] = useState(0);
   const [lastAttempt, setLastAttempt] = useState<ChatAttempt | null>(null);
   const startedAt = useRef(0);
   const lastUpdateAt = useRef(0);
   const [docsTick, setDocsTick] = useState(0);
-  const [docsCollapsed, setDocsCollapsed] = useState(false);
+  const side = useSidePanel();
+  const reader = useReader();
+  const [stopping, setStopping] = useState(false);
+  const stopped = useRef(false);
+  // Where the running turn's own messages start: they show as the live draft, not as finished replies.
+  const [turnStart, setTurnStart] = useState(0);
   const [prefill, setPrefill] = useState<{ text: string; n: number }>({ text: '', n: 0 });
   const msgsRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -142,8 +163,12 @@ export default function Chat({ projectId }: { projectId: string }) {
     setQuietSeconds(0);
     setStatus('Sending your request…');
     setActivity([]);
+    setProgress('');
     setStreaming(true);
     setError('');
+    stopped.current = false;
+    // Everything after the messages already shown belongs to this turn: it shows as the live draft until it ends.
+    setMessages((m) => { setTurnStart(m.length); return m; });
     try {
       let interrupted = false;
       let failed = false;
@@ -151,8 +176,8 @@ export default function Chat({ projectId }: { projectId: string }) {
       for await (const ev of api.streamChat(projectId, message, resume, attachmentIds, controller.signal, attempt.userMessageId)) {
         lastUpdateAt.current = Date.now();
         setQuietSeconds(0);
-        if (ev.type === 'status') setStatus(ev.text);
-        else if (ev.type === 'token' && ev.source === 'main') { setStatus('Writing a response…'); pushToken(ev.source, ev.text); }
+        if (ev.type === 'status') { setStatus(ev.text); setProgress(ev.text.replace(/…$/, '')); }
+        else if (ev.type === 'token' && ev.source === 'main') { setStatus('Writing a response…'); setProgress(''); pushToken(ev.source, ev.text); }
         else if (ev.type === 'step' && ev.node === 'model') setStatus('Reviewing the next step…');
         else if (ev.type === 'todos') setTodos(ev.todos);
         else if (ev.type === 'tool_call') {
@@ -174,10 +199,12 @@ export default function Chat({ projectId }: { projectId: string }) {
           if (!failed) setStatus(interrupted ? 'Waiting for your approval' : 'Finished');
         }
       }
-      if (!completed && !interrupted && !failed) throw new Error('The connection ended before wizi finished. Please try again.');
+      if (!completed && !interrupted && !failed && !stopped.current) throw new Error('The connection ended before wizi finished. Please try again.');
+      if (stopped.current) setStatus('Stopped. Everything you approved is saved.');
       if ((resume || attempt.answersCard) && completed && !interrupted && !failed) setPending(null);
     } catch (e) {
       if (controller.signal.aborted) return; // Project change/deletion intentionally closes this stream.
+      if (stopped.current) { setStatus('Stopped. Everything you approved is saved.'); return; }
       setError(chatFailureMessage(e));
       setStatus('Request needs attention');
     } finally {
@@ -238,75 +265,237 @@ export default function Chat({ projectId }: { projectId: string }) {
     setStatus(pending ? 'Waiting for your approval' : 'Ready for your message');
   };
 
+  const stop = async () => {
+    stopped.current = true;
+    setStopping(true);
+    try {
+      await api.stopTurn(projectId);
+    } catch {
+      stopped.current = false;
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  const tools = useMemo<ChatTools>(() => ({
+    projectId,
+    onRetry: (guidance: string) => send(retryMessage(guidance), []),
+    openReader: reader.open,
+  }), [projectId, reader.open]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const lastMsg = messages[messages.length - 1];
   const showQuickReplies =
     !streaming && !pending && !error && lastMsg?.role === 'agent' && asksApproval(lastMsg.text);
+  const shown = streaming ? messages.slice(0, turnStart) : messages;
+  const draft = streaming ? messages.slice(turnStart).filter((m) => m.role === 'agent').map((m) => m.text).join('\n\n') : '';
+  const latestReply = [...shown].reverse().find((m) => m.role === 'agent');
+  const replyKey = latestReply ? `${shown.lastIndexOf(latestReply)}:${latestReply.text.length}` : '';
+  const todosDone = todos.filter((todo) => todo.status === 'completed').length;
+  const pill = streaming ? ['Working', 'working'] : pending ? ['Needs your review', 'waiting'] : error ? ['Needs attention', 'failed'] : ['Ready', 'ready'];
 
   return (
-    <div className={`layout${docsCollapsed ? ' docs-collapsed' : ''}`}>
-      <section className="chat">
-        <div className={`agent-status ${streaming ? 'working' : error ? 'failed' : ''}`} role="status" aria-live="polite">
-          <span className={streaming ? 'status-dot pulse' : 'status-dot'} />
-          <div><strong>{streaming ? 'wizi is working' : error ? 'wizi stopped' : pending ? 'wizi needs your review' : 'wizi'}</strong><span>{status}</span></div>
-          {streaming && <small>{elapsed}s elapsed{quietSeconds >= 15 ? ' · Waiting for an update…' : ''}</small>}
-          {docsCollapsed && <button className="ghost" onClick={() => setDocsCollapsed(false)} aria-expanded={false}>Show handover docs</button>}
-        </div>
-        <TodoPanel todos={todos} streaming={streaming} />
-        <div className="msgs" ref={msgsRef} onScroll={onMsgsScroll}>
-          {messages.length === 0 && (
-            <p className="empty">
-              Describe your software idea — goal, users, scale, budget, timeline.
-              Or attach existing source files and handover docs to plan a feature.
-              Get implementation contracts for coding agents and a readable overview.
-            </p>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={`msg ${m.role}`}>
-              {m.source && m.source !== 'main' && <small>{m.source}</small>}
-              <Markdown text={m.text} className="msg-body" />
-            </div>
-          ))}
-          {activity.length > 0 && (
-            <div className="activity">
-              {activity.map((a, i) => (
-                <div key={i}>{a}</div>
-              ))}
-            </div>
-          )}
-          {pending && (
-            <Approvals
-              key={pending.interrupt_id}
-              interruptId={pending.interrupt_id}
-              disabled={streaming}
-              actions={pending.action_requests}
-              onResolve={resolveApproval}
+    <ChatToolsContext.Provider value={tools}>
+      <div className="chat-page">
+        <header className="chat-header">
+          <ProjectTitle project={project} projectId={projectId} onRenamed={onRenamed} onDeleted={onDeleted} busy={streaming} />
+          <span className={`status-pill status-${pill[1]}`} role="status" aria-live="polite" title={status}>{pill[0]}</span>
+          <div className="chat-header-end">
+            <SideToggle
+              open={side.open}
+              onToggle={side.toggle}
+              label="Brief and documents"
+              count={todos.length ? `${todosDone}/${todos.length}` : undefined}
             />
-          )}
-          {showQuickReplies && (
-            <div className="quick-replies" role="group" aria-label="Approval actions">
-              <button onClick={() => send('Approved — please go ahead.', [])}>✅ Approve</button>
-              <button
-                className="ghost"
-                onClick={() => setPrefill((p) => ({ text: 'Please change: ', n: p.n + 1 }))}
+          </div>
+        </header>
+
+        <div
+          className={`chat-layout${side.open ? ' side-open' : ''}${reader.content ? ' reader-open' : ''}`}
+          style={{ '--reader-width': `${reader.width}px` } as CSSProperties}
+        >
+          <div className="chat-main">
+            <div className="conversation-frame">
+              <div
+                className="conversation"
+                ref={msgsRef}
+                onScroll={onMsgsScroll}
+                role="log"
+                aria-label="Conversation with wizi"
+                aria-live="polite"
+                aria-relevant="additions"
               >
-                ✏️ Request changes
-              </button>
+                {shown.length === 0 && !streaming && (
+                  <p className="muted conversation-empty">
+                    Describe your software idea: goal, users, scale, budget, timeline. Or attach your code and say
+                    what to add or clean up.
+                  </p>
+                )}
+                {shown.map((m, i) =>
+                  m.role === 'user' ? (
+                    <div key={m.id ?? i} className="msg msg-user">
+                      <div className="msg-body">
+                        <span className="visually-hidden">You:</span>
+                        <p className="user-text">{m.text}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <WiziRow key={m.id ?? i} face={!streaming && !pending && m === latestReply ? 'standby' : 'still'}>
+                      <WiziReply
+                        text={m.text}
+                        prompt={[...shown.slice(0, i)].reverse().find((before) => before.role === 'user')?.text ?? ''}
+                        latest={!streaming && m === latestReply}
+                      />
+                    </WiziRow>
+                  ),
+                )}
+                {streaming && (
+                  <div aria-live="off">
+                    <WiziRow face="thinking">
+                      <ThinkingLine elapsed={elapsed} activity={draft ? '' : activity[activity.length - 1] ?? progress} draft={draft} />
+                      {quietSeconds >= 15 && <p className="muted small">Waiting for an update…</p>}
+                    </WiziRow>
+                  </div>
+                )}
+                {pending && (
+                  <WiziRow face="standby">
+                    <Approvals
+                      key={pending.interrupt_id}
+                      interruptId={pending.interrupt_id}
+                      disabled={streaming}
+                      actions={pending.action_requests}
+                      onResolve={resolveApproval}
+                    />
+                  </WiziRow>
+                )}
+                {showQuickReplies && (
+                  <div className="quick-replies" role="group" aria-label="Approval actions">
+                    <button type="button" className="button primary small" onClick={() => send('Approved — please go ahead.', [])}>✅ Approve</button>
+                    <button
+                      type="button"
+                      className="button ghost small"
+                      onClick={() => setPrefill((p) => ({ text: 'Please change: ', n: p.n + 1 }))}
+                    >
+                      ✏️ Request changes
+                    </button>
+                  </div>
+                )}
+                {error && (
+                  <div className="chat-error" role="alert">
+                    <p>{chatFailureMessage(new Error(error))}</p>
+                    {lastAttempt && !streaming && (
+                      <div className="button-row">
+                        <button type="button" className="button primary small" onClick={resend}>Resend</button>
+                        <button type="button" className="button ghost small" onClick={deleteFailed} title="Remove this failed message from the current chat">Delete</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-          {error && <div className="error" role="alert">
-            <p>{chatFailureMessage(new Error(error))}</p>
-            {lastAttempt && !streaming && <div className="row">
-              <button onClick={resend}>Resend</button>
-              <button className="ghost" onClick={deleteFailed} title="Remove this failed message from the current chat">Delete</button>
-            </div>}
-          </div>}
-          {streaming && <div className="typing">wizi is working…</div>}
+            <Composer
+              projectId={projectId}
+              running={streaming}
+              stopping={stopping}
+              onSend={send}
+              onStop={() => void stop()}
+              reply={streaming || !latestReply ? null : { key: replyKey, text: latestReply.text }}
+              prefill={prefill}
+              placeholder={pending ? 'Type or say "approve", or what to change…' : undefined}
+            />
+          </div>
+          <aside id="chat-side" className="chat-side" aria-label="Brief and documents" hidden={!side.open}>
+            <div className="chat-side-head">
+              <h2>Brief and documents</h2>
+              <button type="button" className="icon-button" aria-label="Close the panel" onClick={side.toggle}>×</button>
+            </div>
+            <TodoPanel todos={todos} />
+            <QualityPanel projectId={projectId} refreshKey={docsTick} disabled={streaming || !!pending} onDiscuss={(text) => send(text, [])} onChanged={() => setDocsTick((t) => t + 1)} />
+            <DocViewer projectId={projectId} refreshKey={docsTick} onOpen={reader.open} />
+          </aside>
+          <ReaderPane reader={reader} />
         </div>
-        <QualityPanel projectId={projectId} refreshKey={docsTick} disabled={streaming || !!pending} onDiscuss={text => send(text, [])} onChanged={() => setDocsTick(t => t + 1)} />
-        <Composer projectId={projectId} disabled={streaming} onSend={send} prefill={prefill}
-          placeholder={pending ? 'Type or say "approve", or what to change…' : undefined} />
-      </section>
-      <DocViewer projectId={projectId} refreshKey={docsTick} collapsed={docsCollapsed} onCollapse={() => setDocsCollapsed(true)} />
+      </div>
+    </ChatToolsContext.Provider>
+  );
+}
+
+function WiziRow({ face = 'still', children }: { face?: FaceState; children: ReactNode }) {
+  return (
+    <div className="msg msg-kanya">
+      <WiziFace className="avatar" size={36} state={face} />
+      <div className="msg-body">
+        <span className="visually-hidden">wizi:</span>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// The project's name in the header, renamed in place; Delete beside it asks once.
+function ProjectTitle({ project, projectId, onRenamed, onDeleted, busy }: {
+  project: ProjectSummary | null;
+  projectId: string;
+  onRenamed: (updated: ProjectSummary) => void;
+  onDeleted: (projectId: string) => void;
+  busy: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [name, setName] = useState('');
+  const [working, setWorking] = useState(false);
+  const [problem, setProblem] = useState('');
+  const title = project?.title ?? 'Project';
+
+  const save = async () => {
+    if (!name.trim() || working) return;
+    setWorking(true);
+    setProblem('');
+    try {
+      onRenamed(await api.renameProject(projectId, name.trim()));
+      setEditing(false);
+    } catch (failure) {
+      setProblem(failure instanceof Error ? failure.message : 'Could not rename the project.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const remove = async () => {
+    setWorking(true);
+    setProblem('');
+    try {
+      await api.deleteProject(projectId);
+      onDeleted(projectId);
+    } catch (failure) {
+      setProblem(failure instanceof Error ? failure.message : 'Could not delete the project.');
+      setWorking(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <form className="title-edit" aria-label="Rename project" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <label htmlFor="project-name" className="visually-hidden">Project name</label>
+        <input id="project-name" autoFocus maxLength={200} value={name} disabled={working} onChange={(event) => setName(event.target.value)} />
+        <button type="submit" className="button primary small" disabled={working || !name.trim()}>{working ? 'Saving…' : 'Save name'}</button>
+        <button type="button" className="button ghost small" onClick={() => setEditing(false)}>Cancel</button>
+        {problem && <span className="form-error small" role="alert">{problem}</span>}
+      </form>
+    );
+  }
+  return (
+    <div className="title-wrap">
+      <h1 title={title}>{title}</h1>
+      <button type="button" className="button ghost small" onClick={() => { setName(title); setEditing(true); setConfirming(false); }}>Rename</button>
+      {confirming ? (
+        <>
+          <button type="button" className="button danger small" disabled={working} onClick={() => void remove()}>{working ? 'Deleting…' : 'Delete for good'}</button>
+          <button type="button" className="button ghost small" onClick={() => setConfirming(false)}>Keep</button>
+        </>
+      ) : (
+        <button type="button" className="button ghost small" title={busy ? 'Deleting stops wizi first' : undefined} onClick={() => setConfirming(true)}>Delete</button>
+      )}
+      {problem && <span className="form-error small" role="alert">{problem}</span>}
     </div>
   );
 }

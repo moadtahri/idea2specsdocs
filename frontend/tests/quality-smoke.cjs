@@ -27,7 +27,10 @@ const assert = require('node:assert/strict');
       return route.fulfill({contentType: 'text/event-stream', body: 'data: {"type":"token","source":"main","text":"I will plan the salon booking bundle using your cancellation and scheduling decisions."}\n\ndata: {"type":"done","thread_id":"test"}\n\n'});
     });
     await page.goto(base);
-    await page.getByLabel('Current project').selectOption(project);
+    await page.locator(`a[href="#${project}"]`).click();
+    // The brief panel lives in the chat's drawer, closed by default.
+    await page.getByRole('button', {name: 'Brief and documents'}).click();
+    await page.locator('#chat-side .quality-panel').waitFor();
     await page.getByRole('button', {name: 'Review project brief', exact: true}).click();
     assert.equal(await page.getByLabel('Industry / app vertical', {exact: true}).inputValue(), brief.vertical);
     assert.equal(await page.getByLabel('Service provided', {exact: true}).inputValue(), brief.service);

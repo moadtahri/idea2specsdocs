@@ -10,14 +10,27 @@ confirm, and never saves anything without your approval.
 If someone set it up for you, open the address they gave you (usually **http://localhost:8080**). To start it
 yourself, see the README's *Run with Docker Compose*.
 
-The screen has three parts:
+The screen has four parts:
 
 | Area | What it is for |
 |---|---|
-| **Top bar** | Create a project, pick one to resume, rename or delete it. |
-| **Chat** (left) | Your conversation with wizi, its live progress, and approval cards. |
-| **Handover docs** (right) | Your documents and specs as they are saved, downloads, and the agent package. Collapse it for more room. |
-| **Review project brief** (below the chat) | The brief, the decisions, the decision map and the review. |
+| **Sidebar** (left) | New project, your projects, and the theme (auto, light, dark). In a chat it folds to icons; the panel button opens it. |
+| **Chat** (middle) | Your conversation with wizi: its replies with their tools, the live line while it works, and approval cards. The message box at the bottom has **+** for files, **Dictate**, **Start voice**, **Stop** and **Send**. |
+| **Brief and documents** (right, opened from the header) | wizi's plan, **Review project brief** (the brief, the decisions and the decision map), and the documents, the agent package and its checks. |
+| **Reader** (right) | A document or a long reply, opened from the list or from a document card. Copy or download it; drag its edge to resize; Escape closes it. |
+
+The header shows the project's name with **Rename** and **Delete**, and a pill saying whether wizi is working, needs
+your review, or is ready.
+
+### Under each reply
+
+| Tool | What it does |
+|---|---|
+| Copy | Copies the reply. |
+| 👍 / 👎 | Rates the reply; a bad rating asks what was wrong. Ratings are kept with the project. |
+| Read aloud | wizi reads the reply in its voice; press again to stop. |
+| Try again… | On the latest reply: ask wizi to redo it, optionally saying what to change. |
+| Sources | When a reply has links, lists them in the reader. |
 
 ## 2. Start a project
 
@@ -26,8 +39,9 @@ The screen has three parts:
    - **A new idea:** what it is for, who uses it, what success looks like, budget and timeline if you know them.
    - **An existing app plus a change:** attach the code as a `.zip` with **+** and say what you want added.
    - **An existing app to clean up:** attach the code and say what is wrong with it today.
-3. You can attach notes, PDFs, Word files or recordings with **+**, or press 🎤 to speak. Your words appear in the
-   box while you talk; read them, edit if needed, then **Send**.
+3. You can attach notes, PDFs, Word files or recordings with **+**. Or speak: **Dictate** puts your words in the
+   box as you talk, to read and send yourself; **Start voice** is a spoken conversation, each sentence sent as you
+   finish it and wizi's replies read aloud (talk over it to interrupt). Escape stops either.
 
 wizi reads everything first. It never asks what your files already answer, and when you attach code it has a
 specialist read it and report back.
@@ -42,7 +56,7 @@ wizi asks in short rounds: at most three questions, the most important first. Ea
 
 ### The decision map
 
-Open **Review project brief** → **Decisions and requirements**. The map shows every decision:
+Open **Brief and documents** in the header, then **Review project brief** → **Decisions and requirements**. The map shows every decision:
 
 | On the map | Meaning |
 |---|---|
@@ -65,7 +79,7 @@ When a decision belongs to someone who is not in the chat (a clinic owner, a fin
 
 ## 4. Approve the brief
 
-When the brief is complete, open **Review project brief**, check every field, and click **Approve brief & plan
+When the brief is complete, open **Brief and documents** → **Review project brief**, check every field, and click **Approve brief & plan
 bundle**. You can also simply type **approve the brief**. A plain "yes" does not approve the brief: in a conversation
 it answers wizi's questions.
 
@@ -102,7 +116,7 @@ wizi then checks everything: the documents against each other, an independent re
 agent will receive it. Fix what it finds through the same cards. wizi never calls the work "production-ready" unless
 the checks and the review support it.
 
-In **Handover docs**:
+In **Brief and documents**, under **Handover docs** (a document opens in the reader):
 
 - **Download agent package (.zip)**: unzip it at the root of your repository. Your coding agent (for example
   Claude Code) builds one task per session: `/build-<project> task 00 T1`, then `check`, then `commit`. The
@@ -120,7 +134,7 @@ card, and the next package you download carries the answer.
 
 ## 8. Managing projects
 
-- **Pick a project** in the dropdown to resume it. Everything is remembered: the conversation, the brief, decisions
+- **Pick a project** in the sidebar to resume it. Everything is remembered: the conversation, the brief, decisions
   and files.
 - **Rename** changes its name.
 - **Delete** stops any work in progress and removes the project's documents, uploads and conversation. This cannot be
@@ -135,8 +149,8 @@ card, and the next package you download carries the answer.
 | "wizi reached its work limit before finishing" (an error) | **Resend** with a smaller request, or **Delete** it. |
 | "The model service is busy" | Wait a moment, then **Resend**. |
 | "wizi cannot access its model credential" | The server cannot reach AWS Secrets Manager: ask whoever runs itos. |
-| A voice note says "The recording was empty" | Record again and speak for a moment before pressing Stop. |
-| "Live transcription unavailable" | Your voice note is still recorded and transcribed when you stop. |
+| Voice says "Allow the microphone to use voice." | Allow the microphone for this site in your browser, then press Dictate again. |
+| Voice says "Voice is not available right now." | The voice service could not be reached; type instead, and ask whoever runs itos to check the OpenAI key. |
 
 ## 10. Good habits
 

@@ -9,9 +9,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from anyio import CancelScope
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from langchain.messages import AIMessageChunk, ToolMessage
 from langgraph.types import Command
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
@@ -25,6 +25,7 @@ from . import (
     questionnaire,
     store,
     typed_approval,
+    voice,
 )
 from . import quality_store as qs
 from .agent.bundles import message_text, summarize_bundle
@@ -46,8 +47,10 @@ from .schemas import (
     ChatRequest,
     DocContent,
     DocMeta,
+    FeedbackInput,
     ProjectCreate,
     ProjectSummary,
+    SpeakInput,
 )
 from .secrets import resolve_assemblyai_api_key
 from .source_context import (
@@ -555,6 +558,75 @@ def _decision_line(project_id: str, decisions: list[dict]) -> str:
     if first.get("type") == "approve":
         return f"✅ Approved: {names}"
     return f"✏️ Changes requested for {names}: {first.get('message', '')}".rstrip(": ")
+
+
+@app.post("/api/projects/{project_id}/stop")
+def stop_turn(project_id: str) -> dict:
+    """End wizi's current turn (spec 09, Kanya's Stop). Everything approved so far stays saved."""
+    _require_project(project_id)
+    task = _chat_tasks.get(project_id)
+    if task is None or task.done():
+        return {"stopped": False}
+    task.cancel()
+    logger.info("[%s] ■ stopped by the user", project_id[:8])
+    return {"stopped": True}
+
+
+@app.get("/api/projects/{project_id}/feedback")
+def reply_ratings(project_id: str) -> dict:
+    _require_project(project_id)
+    return {"ratings": store.ratings(project_id)}
+
+
+@app.post("/api/projects/{project_id}/feedback", status_code=201)
+def rate_reply(project_id: str, body: FeedbackInput) -> dict:
+    """A good or bad rating of one of wizi's replies, kept with the reply and the message it answered."""
+    _require_project(project_id)
+    return store.rate_reply(
+        project_id, body.rating, body.reply, body.prompt, list(body.reasons), body.note
+    )
+
+
+@app.delete("/api/projects/{project_id}/feedback/{reply_hash}", status_code=204)
+def withdraw_rating(project_id: str, reply_hash: str) -> Response:
+    _require_project(project_id)
+    store.withdraw_rating(project_id, reply_hash)
+    return Response(status_code=204)
+
+
+@app.post("/api/voice/speak")
+async def speak(body: SpeakInput) -> StreamingResponse:
+    """wizi's reply read aloud: 24 kHz 16-bit mono PCM, streamed (spec 09)."""
+    text = voice.spoken(body.text)
+    if not text:
+        raise HTTPException(status_code=422, detail="There is nothing to say aloud.")
+    try:
+        stream = voice.speech(text, body.voice)
+        first = await anext(stream)
+    except voice.VoiceUnavailable as problem:
+        raise HTTPException(status_code=503, detail=str(problem)) from problem
+    except Exception as problem:
+        logger.warning("speech failed (%s)", type(problem).__name__)
+        raise HTTPException(
+            status_code=502, detail="wizi's voice is not available right now."
+        ) from problem
+
+    async def audio():
+        yield first
+        async for chunk in stream:
+            yield chunk
+
+    return StreamingResponse(
+        audio(),
+        media_type="audio/pcm",
+        headers={"X-Audio-Rate": str(voice.RATE), "Cache-Control": "no-store"},
+    )
+
+
+@app.websocket("/api/voice/listen")
+async def listen(socket: WebSocket) -> None:
+    """Dictation and voice mode: the microphone relayed to OpenAI realtime transcription (spec 09)."""
+    await voice.relay(socket)
 
 
 @app.get("/api/projects/{project_id}/history")

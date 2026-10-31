@@ -1,0 +1,296 @@
+/* CH-1228: Kanya's replies: their actions, the bad-reply and try-again forms, the document card and the reader. */
+
+.reply-actions-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.reply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.reply-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-subtle);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  justify-content: center;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.reply-action:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.reply-action.is-on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.reply-action:focus-visible,
+.doc-card:focus-visible,
+.reason-chip:focus-visible,
+.reader-resizer:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.reply-sources {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 10px;
+  margin-left: 4px;
+}
+
+.reply-thanks {
+  margin-left: 6px;
+}
+
+.reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 560px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.reply-form-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.reply-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reason-chip {
+  padding: 3px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.reason-chip.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.reply-form-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* A long reply: its opening, fading out, then the document card. */
+.reply-excerpt {
+  position: relative;
+  max-height: 14em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 520px;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.doc-card:hover {
+  border-color: var(--accent);
+}
+
+.doc-card svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.doc-card-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.doc-card-words strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The reader on the right: its left edge drags to resize it. */
+.reader-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.reader-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -9px;
+  z-index: 5;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.reader-resizer::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.reader-resizer:hover::after,
+.reader-resizer:focus-visible::after,
+.resizing-reader .reader-resizer::after {
+  width: 2px;
+  background: var(--canyas-teal);
+  box-shadow: 0 0 8px var(--glow);
+}
+
+.resizing-reader {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.resizing-reader iframe {
+  pointer-events: none;
+}
+
+.reader-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.reader-head h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-md, 1rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-button {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.reader-button:hover {
+  background: var(--surface-2);
+}
+
+.reader-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reader-close:hover {
+  background: var(--surface-2);
+}
+
+.reader-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.reader-sources {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.reader-sources a {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.reader-sources a:hover .reader-source-label {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.reader-source-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.reader-source-host {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}

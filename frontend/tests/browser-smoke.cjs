@@ -10,19 +10,21 @@ const assert = require('node:assert/strict');
     page.on('pageerror', (error) => errors.push(error.message));
     await page.addInitScript(() => {
       window.stoppedTracks = 0;
+      // A real (oscillator) stream: dictation feeds it through an AudioWorklet.
       Object.defineProperty(navigator, 'mediaDevices', { value: {
-        getUserMedia: async () => ({ getTracks: () => [{ stop: () => { window.stoppedTracks++; } }] }),
+        getUserMedia: async () => {
+          const context = new AudioContext();
+          const oscillator = context.createOscillator();
+          const destination = context.createMediaStreamDestination();
+          oscillator.connect(destination);
+          oscillator.start();
+          for (const track of destination.stream.getTracks()) {
+            const stop = track.stop.bind(track);
+            track.stop = () => { window.stoppedTracks++; stop(); oscillator.stop(); void context.close(); };
+          }
+          return destination.stream;
+        },
       } });
-      window.MediaRecorder = class {
-        static isTypeSupported(type) { return type === 'audio/mp4'; }
-        constructor(_stream, options) { this.mimeType = options.mimeType; this.state = 'inactive'; }
-        start() { this.state = 'recording'; }
-        stop() {
-          this.state = 'inactive';
-          this.ondataavailable?.({ data: new Blob(['test recording'], { type: this.mimeType }) });
-          this.onstop?.();
-        }
-      };
     });
     const json = (route, value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     const emit = (route, events) => route.fulfill({ contentType: 'text/event-stream', body: events.map((event) => `data: ${JSON.stringify(event)}\r\n\r\n`).join('') });
@@ -34,6 +36,14 @@ const assert = require('node:assert/strict');
       { slug: 'bundle', title: 'Handover Bundle (readable)', updated_at: new Date().toISOString() },
       { slug: 'bundle-agent', title: 'Handover Bundle (for agents)', updated_at: new Date().toISOString() },
     ] }));
+    await page.route('**/api/projects/test/history', (route) => json(route, { messages: [], pending: null, todos: [] }));
+    await page.route('**/api/projects/test/feedback', (route) => json(route, { ratings: [] }));
+    await page.route('**/api/projects/test/quality?*', (route) => json(route, {
+      brief: { status: 'approved', revision: 'r1', brief: { vertical: 'Software', service: 'Saved searches' }, missing: [] },
+      review_status: 'not_reviewed', spec_revision: 's1', ready_for_implementation: false, implementation_verified: false,
+      ready_for_production: false, verification_note: '', items: [], frontier: [], findings: [], last_review: null,
+      evidence: [], required_test_ids: [], required_launch_ids: [], security_coverage: [],
+    }));
     await page.route('**/api/projects/test/docs/bundle', (route) => json(route, { slug: 'bundle', title: 'Overview', markdown: '# Feature overview\n\nUsers can **save searches**.\n\n- Review security\n- Verify acceptance tests\n\n```json\n{"saved": true}\n```' }));
     let chatCalls = 0;
     await page.route('**/api/chat', (route) => {
@@ -64,24 +74,33 @@ const assert = require('node:assert/strict');
       }
       return emit(route, [token('Saved the revised document.'), done]);
     });
-    let recordings = 0;
-    await page.route('**/api/transcribe', (route) => {
-      recordings++;
-      assert.match(route.request().postData(), /filename="recording.mp4"/);
-      assert.match(route.request().postData(), /Content-Type: audio\/mp4/);
-      return recordings === 1
-        ? json(route, { detail: 'Voice transcription cannot access its AWS secret.' }, 503)
-        : json(route, { text: 'Add saved searches to the project.' });
+    // Dictation streams to /api/voice/listen (the AssemblyAI recording and its retry are gone): the first session fails, the second transcribes.
+    let sessions = 0;
+    let pcmChunks = 0;
+    await page.routeWebSocket('**/api/voice/listen', (socket) => {
+      sessions++;
+      const session = sessions;
+      const send = (value) => { try { socket.send(JSON.stringify(value)); } catch {} };
+      send(session === 1 ? { type: 'error', text: 'Voice transcription cannot access its AWS secret.' } : { type: 'ready' });
+      socket.onMessage((message) => {
+        if (typeof message === 'string') return;
+        pcmChunks++;
+        if (pcmChunks === 2) {
+          send({ type: 'partial', text: 'Add saved' });
+          send({ type: 'final', text: 'Add saved searches to the project.' });
+        }
+      });
     });
 
     await page.goto('http://127.0.0.1:5178');
-    await page.locator('select').selectOption('test');
+    await page.locator('a[href="#test"]').click();
     const input = page.getByRole('textbox', { name: 'Message', exact: true });
     await input.fill('Plan this feature.\n\n```python\nprint("hello")\n```');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await page.getByRole('button', { name: '✅ Approve', exact: true }).waitFor();
-    assert.equal(await page.locator('.msg.user .codeblock').count(), 1);
-    assert.equal(await page.locator('.msg.agent .codeblock').count(), 1);
+    // The user's message now shows as plain text (no code callout): its fence must survive verbatim.
+    assert.match(await page.locator('.msg.msg-user .user-text').innerText(), /```python\nprint\("hello"\)\n```/);
+    assert.equal(await page.locator('.msg.msg-kanya .codeblock').count(), 1);
     assert.equal(await page.getByText('Hidden reasoning').count(), 0);
     assert.equal(await page.getByText('Hidden specialist notes').count(), 0);
     await page.getByRole('button', { name: '✅ Approve', exact: true }).click();
@@ -101,19 +120,23 @@ const assert = require('node:assert/strict');
     await page.getByText('Saved the revised document.').waitFor();
     await page.locator('.approvals').waitFor({ state: 'detached' });
 
-    await page.getByRole('button', { name: 'Record voice message', exact: true }).click();
-    await page.getByRole('button', { name: 'Stop', exact: true }).click();
-    await page.getByText('Voice transcription cannot access its AWS secret.').waitFor();
-    await page.getByRole('button', { name: 'Retry transcription' }).click();
+    await page.getByRole('button', { name: 'Dictate', exact: true }).click();
+    await page.locator('.voice-caption.is-problem', { hasText: 'Voice transcription cannot access its AWS secret.' }).waitFor();
+    await page.getByRole('button', { name: 'Dictate', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('textarea[aria-label="Message"]').value.includes('Add saved searches'));
-    assert.equal(recordings, 2);
-    assert.ok(await page.evaluate(() => window.stoppedTracks > 0));
-    assert.equal(await page.getByText('voice note attached').count(), 0);
-    assert.equal(await page.locator('.docs .codeblock').count(), 1);
-    assert.equal(await page.locator('.docs .markdown strong').innerText(), 'save searches');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Dictate', exact: true }).waitFor();
+    assert.equal(sessions, 2);
+    await page.waitForFunction(() => window.stoppedTracks >= 2);
+    assert.equal(chatCalls, 7); // dictated words wait in the box; nothing is sent
+    await page.getByRole('button', { name: 'Brief and documents' }).click();
+    await page.locator('#chat-side .doc-row', { hasText: 'Handover Bundle (readable)' }).click();
+    await page.locator('.reader-pane .reader-body .markdown').waitFor();
+    assert.equal(await page.locator('.reader-body .codeblock').count(), 1);
+    assert.equal(await page.locator('.reader-body .markdown strong').innerText(), 'save searches');
     await page.screenshot({ path: 'tests/artifacts/chat.png', fullPage: true });
     assert.deepEqual(errors, []);
-    console.log('Browser smoke passed: code callouts, CRLF streaming, approval/retry/changes, bundle rendering, microphone MP4 and transcription retry.');
+    console.log('Browser smoke passed: code callouts, CRLF streaming, approval/retry/changes, bundle in the reader, dictation with a failed then working voice session.');
   } finally {
     await browser.close();
   }

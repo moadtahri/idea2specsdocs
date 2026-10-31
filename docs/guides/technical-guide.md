@@ -60,7 +60,8 @@ flowchart LR
 | `diagrams.py` | Mermaid diagrams (build order, decision graph) built from data for the readable bundle. |
 | `source_context.py` | Reads an uploaded source ZIP safely (text only, no dependencies, no `.env`, no traversal) and writes a browsable tree. Never executes code. |
 | `secrets.py` | Fetches API keys from AWS Secrets Manager only. |
-| `transcription.py` | AssemblyAI upload and polling for voice notes. |
+| `voice.py` | Voice (spec 09): OpenAI streaming speech for read aloud, and the realtime transcription relay for dictation and voice mode. |
+| `transcription.py` | AssemblyAI upload and polling for voice notes (kept in the API; the chat now uses `voice.py`). |
 
 ### The agent: `backend/app/agent/`
 
@@ -92,17 +93,19 @@ flowchart LR
 
 | File | Responsibility |
 |---|---|
-| `src/App.tsx` | Project picker, create, rename, delete; mounts the chat for the chosen project. |
+| `src/App.tsx` | The layout (sidebar + page), the start page, and the chat for the chosen project. |
+| `src/components/layout/` | `AppLayout` (sidebar folding to a rail, resizable, a drawer on narrow screens) and `Sidebar` (projects, theme): Kanya's shell (spec 09). |
 | `src/api.ts` | Typed API client and the SSE stream reader. |
-| `src/components/Chat.tsx` | The conversation: sends messages, reads the stream, shows progress, errors, Resend/Delete, the approval card. |
-| `src/components/Composer.tsx` | Message box, attachments, voice recording and live transcription. Stays open while a card waits. |
+| `src/components/Chat.tsx` | The chat page, as Kanya's: header (rename, delete, status, the side-panel toggle), conversation with wizi's orb, the live line, the approval card inline, Stop; the side panel and the reader. Sends messages, reads the stream, Resend/Delete. |
+| `src/components/chat/` | Ported from Kanya's chat: `WiziReply` (reply tools: copy, rating, read aloud, try again, sources; long replies as a document card), `ReaderPane`, `SidePanel`, `ThinkingLine`, `VoiceButtons` + `voice.ts` (dictation and voice mode over `/api/voice/listen`, read aloud from `/api/voice/speak`), `feedback.ts`. |
+| `src/components/Composer.tsx` | Kanya's boxed input bar: text growing with what is written, + for files (uploaded at once), the voice buttons, Stop and Send. Stays open while a card waits. |
 | `src/components/Approvals.tsx` | The approval card: draft preview, Approve & save, Request changes. |
 | `src/components/QualityPanel.tsx` | Brief form, decisions list, questionnaire buttons, review and evidence. |
 | `src/components/DecisionMap.tsx` | The animated decision map (frontier glowing, arrows from blockers). |
-| `src/components/DocViewer.tsx` | Document list, viewer, downloads, package checks, "Bring back questions.md". |
+| `src/components/DocViewer.tsx` | The documents in the side panel (each opens in the reader), the agent package, its checks, "Bring back questions.md". |
 | `src/components/Markdown.tsx`, `MermaidDiagram.tsx` | Safe Markdown rendering; Mermaid blocks drawn in strict mode, loaded only when needed. |
 | `src/components/TodoPanel.tsx` | wizi's live plan (to-do list). |
-| `src/voice.ts`, `public/audio-capture.js` | Microphone capture, level meter, streaming PCM to AssemblyAI. |
+| `src/styles/` | Canyas's design tokens, base, layout and chat styles (`tokens`, `base`, `app`, `kanya`), light and dark, and `itos.css` for itos's own pieces. `src/theme.ts` keeps the theme choice. |
 | `nginx.conf` | Production web server: serves the app and proxies `/api` with streaming kept open. |
 | `tests/*-smoke.cjs` | Browser smoke scripts (Playwright) for chat, approvals, recovery, voice, project management, quality. |
 

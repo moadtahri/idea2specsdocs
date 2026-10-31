@@ -1,29 +1,33 @@
 import { useEffect, useState } from 'react';
 import { api, type DocMeta, type PackageChecks } from '../api';
-import Markdown from './Markdown';
+import type { ReaderContent } from './chat/chatTools';
 
+// The documents in the side panel (spec 09): each opens in the reader, as Kanya's long replies do; the agent package,
+// its checks and the questions coming back stay here.
 export default function DocViewer({
   projectId,
   refreshKey,
-  collapsed,
-  onCollapse,
+  onOpen,
 }: {
   projectId: string;
   refreshKey: number;
-  collapsed: boolean;
-  onCollapse: () => void;
+  onOpen: (content: ReaderContent) => void;
 }) {
   const [docs, setDocs] = useState<DocMeta[]>([]);
-  const [active, setActive] = useState<string | null>(null);
-  const [markdown, setMarkdown] = useState('');
-  const [loadedSlug, setLoadedSlug] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle');
   const [checks, setChecks] = useState<PackageChecks | null>(null);
   const [questionsNote, setQuestionsNote] = useState('');
   const hasPackage = docs.some((d) => d.updated_at && !d.slug.startsWith('bundle'));
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listDocs(projectId)
+      .then((r) => { if (!cancelled) setDocs(r.docs); })
+      .catch(() => { if (!cancelled) setDocs([]); });
+    return () => { cancelled = true; };
+  }, [projectId, refreshKey]);
 
   useEffect(() => {
     if (!hasPackage) { setChecks(null); return; }
@@ -33,6 +37,20 @@ export default function DocViewer({
       .catch(() => { if (!cancelled) setChecks(null); });
     return () => { cancelled = true; };
   }, [projectId, refreshKey, hasPackage]);
+
+  const open = async (doc: DocMeta) => {
+    if (!doc.updated_at || opening) return;
+    setOpening(doc.slug);
+    setError('');
+    try {
+      const content = await api.readDoc(projectId, doc.slug);
+      onOpen({ kind: 'doc', title: doc.title, text: content.markdown });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not open the document.');
+    } finally {
+      setOpening(null);
+    }
+  };
 
   const bringBackQuestions = async (file: File | undefined) => {
     if (!file) return;
@@ -51,66 +69,22 @@ export default function DocViewer({
     }
   };
 
-  useEffect(() => setCopyStatus('idle'), [markdown]);
-
-  useEffect(() => {
-    if (copyStatus !== 'copied') return;
-    const timer = setTimeout(() => setCopyStatus('idle'), 2500);
-    return () => clearTimeout(timer);
-  }, [copyStatus]);
-
-  const copyContent = async () => {
-    if (!markdown || loading || loadedSlug !== active) return;
-    setCopyStatus('copying');
-    try {
-      await navigator.clipboard.writeText(markdown);
-      setCopyStatus('copied');
-    } catch {
-      setCopyStatus('failed');
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listDocs(projectId)
-      .then((r) => {
-        if (cancelled) return;
-        setDocs(r.docs);
-        const bundle = r.docs.find((d) => d.slug === 'bundle' && d.updated_at);
-        const ready = bundle ?? r.docs.find((d) => d.updated_at);
-        if (ready) setActive((selected) => selected ?? ready.slug);
-      })
-      .catch(() => { if (!cancelled) setDocs([]); });
-    return () => { cancelled = true; };
-  }, [projectId, refreshKey]);
-
-  useEffect(() => {
-    if (!active || collapsed) return;
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    setMarkdown('');
-    setLoadedSlug(null);
-    api
-      .readDoc(projectId, active)
-      .then((d) => { if (!cancelled) { setMarkdown(d.markdown); setLoadedSlug(active); } })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the document.'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [projectId, active, refreshKey, retry, collapsed]);
-
   return (
-    <aside className="docs" hidden={collapsed}>
-      <div className="docs-head"><h3>Handover docs</h3><button className="ghost" onClick={onCollapse} aria-label="Hide handover docs" aria-expanded={true}>Collapse</button></div>
-      <p className="muted">The agent package is what a coding agent builds from: a skill, the specs and these documents, to unzip at the root of the repository. The readable bundle explains the contracts in plain language.</p>
+    <section className="panel docs-panel" aria-labelledby="docs-title">
+      <header className="panel-header">
+        <h2 id="docs-title">Handover docs</h2>
+      </header>
+      <p className="muted small">
+        The agent package is what a coding agent builds from: a skill, the specs and these documents, to unzip at the
+        root of the repository. The readable bundle explains the contracts in plain language.
+      </p>
       {hasPackage && (
         <div className="package-tools">
-          <a href={`/api/projects/${projectId}/package`} download>
-            <button className="ghost">Download agent package (.zip)</button>
+          <a className="button primary small" href={`/api/projects/${projectId}/package`} download>
+            Download agent package (.zip)
           </a>
           {checks && (checks.findings.length === 0
-            ? <p className="muted">Package checks: every task can be verified and every link resolves.</p>
+            ? <p className="muted small">Package checks: every task can be verified and every link resolves.</p>
             : <details className="package-checks">
                 <summary>
                   Package checks: {checks.blockers > 0 && <strong>{checks.blockers} to fix</strong>}
@@ -123,43 +97,32 @@ export default function DocViewer({
                   ))}
                 </ul>
               </details>)}
-          <label className="file-pick">
+          <label className="button ghost small file-pick">
             Bring back questions.md
             <input type="file" accept=".md,text/markdown,text/plain" hidden
               onChange={(e) => { void bringBackQuestions(e.target.files?.[0]); e.target.value = ''; }} />
           </label>
-          {questionsNote && <p role="status" className="muted">{questionsNote}</p>}
+          {questionsNote && <p role="status" className="muted small">{questionsNote}</p>}
         </div>
       )}
-      <ul>
+      <ul className="doc-list">
         {docs.map((d) => (
           <li key={d.slug}>
             <button
-              className={d.slug === active ? 'on' : ''}
-              onClick={() => setActive(d.slug)}
-              title={d.updated_at ?? 'not generated'}
+              type="button"
+              className="doc-row"
+              disabled={!d.updated_at || opening !== null}
+              onClick={() => void open(d)}
+              title={d.updated_at ? `Open ${d.title}` : 'Not written yet'}
             >
-              {d.updated_at ? '●' : '○'} {d.title}{d.status && <small> · {d.status.replace('_', ' ')}</small>}
+              <span className={`doc-dot${d.updated_at ? ' ready' : ''}`} aria-hidden="true" />
+              <span className="doc-name">{d.title}</span>
+              <span className="muted small">{opening === d.slug ? 'Opening…' : d.updated_at ? (d.status ?? '').replace('_', ' ') : 'missing'}</span>
             </button>
           </li>
         ))}
       </ul>
-      {loading && <p role="status">Preparing your document…</p>}
-      {error && <div className="error">{error} <button className="ghost" onClick={() => setRetry((n) => n + 1)}>Retry</button></div>}
-      {markdown && loadedSlug === active && <>
-        <div className="doc-actions">
-          <button className="ghost" disabled={loading || copyStatus === 'copying'} onClick={() => void copyContent()}>
-            {copyStatus === 'copied' ? 'Copied!' : copyStatus === 'copying' ? 'Copying…' : 'Copy content'}
-          </button>
-          <span role="status" className="muted">{copyStatus === 'copied' ? 'Document copied to clipboard.' : copyStatus === 'failed' ? 'Could not copy. Allow clipboard access in your browser and try again.' : ''}</span>
-        </div>
-        <Markdown text={markdown} className="md" />
-      </>}
-      {active && markdown && loadedSlug === active && !loading && (
-        <a href={`/api/projects/${projectId}/docs/${active}/download`}>
-          <button className="ghost">Download .md</button>
-        </a>
-      )}
-    </aside>
+      {error && <p className="form-error small" role="alert">{error}</p>}
+    </section>
   );
 }

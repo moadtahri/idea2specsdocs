@@ -1,4 +1,4 @@
-// Verify partial SSE delivery, attachment retries, deletion and collapsible docs.
+// Verify partial SSE delivery, attachment retries, deletion and the brief-and-documents drawer beside the chat.
 const { chromium } = require(process.argv[2] || 'playwright');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -29,10 +29,12 @@ const http = require('node:http');
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     const json = (route, value) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(value) });
     await page.route('**/api/projects', (route) => json(route, [{ project_id: 'test', title: 'Todo app', updated_at: new Date().toISOString() }]));
     await page.route('**/api/projects/test/docs', (route) => json(route, { docs: [] }));
+    await page.route('**/api/projects/test/history', (route) => json(route, { messages: [], pending: null, todos: [] }));
+    await page.route('**/api/projects/test/feedback', (route) => json(route, { ratings: [] }));
     // The brief panel loads on every project; an empty state keeps it quiet (it shows an error when this fails).
     await page.route('**/api/projects/test/quality?*', (route) => json(route, {
       brief: { status: 'approved', revision: 'r1', brief: { vertical: 'Software', service: 'Personal tasks' }, missing: [] },
@@ -48,15 +50,20 @@ const http = require('node:http');
     });
     await page.route('**/api/chat', (route) => route.continue({ url: `http://127.0.0.1:${server.address().port}/api/chat` }));
     await page.goto('http://127.0.0.1:5178');
-    await page.locator('select').selectOption('test');
-    const chat = page.locator('.chat');
-    const expanded = await chat.boundingBox();
-    await page.getByRole('button', { name: 'Hide handover docs' }).click();
-    await page.locator('.docs').waitFor({ state: 'hidden' });
+    await page.locator('a[href="#test"]').click();
+    // The drawer is closed by default (a viewport of 1600px puts it beside the chat when open) and remembered.
+    const chat = page.locator('.chat-main');
+    const side = page.locator('#chat-side');
+    const toggle = page.getByRole('button', { name: 'Brief and documents' });
+    await chat.waitFor();
+    assert.equal(await side.isHidden(), true);
     const collapsed = await chat.boundingBox();
+    await toggle.click();
+    await side.waitFor({ state: 'visible' });
+    await page.locator('#chat-side .docs-panel').waitFor();
+    const expanded = await chat.boundingBox();
     assert.ok(collapsed.width > expanded.width + 250);
-    await page.getByRole('button', { name: 'Show handover docs' }).click();
-    await page.locator('.docs').waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => localStorage.getItem('itos.chat.side')), 'open');
 
     await page.locator('input[type="file"]').setInputFiles([
       { name: 'requirements.txt', mimeType: 'text/plain', buffer: Buffer.from('Users create and complete tasks.') },
@@ -66,36 +73,39 @@ const http = require('node:http');
     const input = page.getByRole('textbox', { name: 'Message', exact: true });
     await input.fill('Discuss my todo list app');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
-    await page.getByText('Reading your attached notes…', { exact: true }).waitFor();
+    const reading = page.locator('.status-pill[title="Reading your attached notes…"]');
+    await reading.waitFor();
     assert.equal(attempts.length, 1);
     assert.equal(await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(), true);
-    await page.waitForFunction(() => document.querySelector('.agent-status small')?.textContent.includes('1s elapsed'));
+    await page.waitForFunction(() => document.querySelector('.live-line')?.textContent.includes('(0:01)'));
     // The server has not finished: this asserts progress is visible DURING streaming.
-    assert.equal(await page.locator('.agent-status.working').count(), 1);
+    assert.equal(await page.locator('.status-pill.status-working', { hasText: 'Working' }).count(), 1);
     finish(true);
     await page.getByRole('button', { name: 'Resend', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Resend', exact: true }).click();
-    await page.getByText('Reading your attached notes…', { exact: true }).waitFor();
+    await reading.waitFor();
     assert.equal(attempts.length, 2);
     assert.equal(attempts[1].message, attempts[0].message);
     assert.deepEqual(attempts[1].attachment_ids, ['file-1', 'file-2']);
     assert.equal(attempts[1].message_id, attempts[0].message_id);
-    assert.equal(await page.locator('.msg.user').count(), 1);
+    assert.equal(await page.locator('.msg.msg-user').count(), 1);
     finish(false);
     await page.getByText('Your notes describe a simple personal task list.').waitFor();
-    await page.locator('.agent-status.working').waitFor({ state: 'detached' });
+    await page.locator('.status-pill.status-working').waitFor({ state: 'detached' });
     assert.equal(uploads, 2);
     await input.fill('A message to delete');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
-    await page.getByText('Reading your attached notes…', { exact: true }).waitFor();
+    await reading.waitFor();
     finish(true);
     await page.getByTitle('Remove this failed message from the current chat').click();
     assert.equal(await page.getByText('A message to delete', { exact: true }).count(), 0);
-    assert.equal(await page.locator('.error').count(), 0);
+    assert.equal(await page.locator('.chat-error').count(), 0);
     assert.equal(await page.getByText('Your notes describe a simple personal task list.').count(), 1);
-    await page.getByRole('button', { name: 'Hide handover docs' }).click();
+    await toggle.click();
+    await side.waitFor({ state: 'hidden' });
+    assert.ok((await chat.boundingBox()).width > expanded.width + 250);
     await page.screenshot({ path: 'tests/artifacts/chat-collapsed.png', fullPage: true });
-    console.log('Recovery smoke passed: progress before completion, heartbeats, elapsed time, text + attachments preserved on resend, failed message deletion, docs collapse and full-width chat.');
+    console.log('Recovery smoke passed: progress before completion, heartbeats, elapsed time, text + attachments preserved on resend, failed message deletion, drawer beside the chat and full-width chat when it closes.');
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

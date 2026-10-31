@@ -1,43 +1,32 @@
 import type { TodoItem } from '../api';
 
-export default function TodoPanel({
-  todos,
-  streaming,
-}: {
-  todos: TodoItem[];
-  streaming: boolean;
-}) {
-  if (todos.length === 0) {
-    if (!streaming) return null;
-    return (
-      <div className="todos">
-        <span className="spin">⟳</span> wizi is preparing your request…
-      </div>
-    );
-  }
-  const done = todos.filter((t) => t.status === 'completed').length;
-  const pct = Math.round((done / todos.length) * 100);
-  const icon = (s: string) =>
-    s === 'completed' ? '✓' : s === 'in_progress' ? '◉' : '○';
+// wizi's to-do list in the side panel, as Kanya's plan panel (spec 09).
+const MARKS: Record<string, string> = { completed: '✓', in_progress: '◐', pending: '○' };
+const STATUS_WORDS: Record<string, string> = { completed: 'done', in_progress: 'in progress', pending: 'to do' };
+
+export default function TodoPanel({ todos }: { todos: TodoItem[] }) {
+  const done = todos.filter((todo) => todo.status === 'completed').length;
   return (
-    <div className="todos">
-      <div className="todos-head">
-        <strong>wizi’s plan</strong>
-        <span>
-          {done}/{todos.length} · {pct}%
-        </span>
-      </div>
-      <div className="bar">
-        <div className="fill" style={{ width: `${pct}%` }} />
-      </div>
-      <ul>
-        {todos.map((t, i) => (
-          <li key={i} className={t.status}>
-            <span className="ico">{icon(t.status)}</span>
-            <span>{t.content}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <section className="panel" aria-labelledby="todo-title">
+      <header className="panel-header">
+        <h2 id="todo-title">wizi's plan</h2>
+        {todos.length > 0 && <span className="muted small">{done} of {todos.length} done</span>}
+      </header>
+      {todos.length === 0 ? (
+        <p className="muted small">wizi writes its plan here once it starts working.</p>
+      ) : (
+        <ol className="todo-list">
+          {todos.map((todo, index) => (
+            <li key={`${index}-${todo.content}`} className={`todo todo-${todo.status}`}>
+              <span className="todo-mark" aria-hidden="true">{MARKS[todo.status] ?? '○'}</span>
+              <span className="todo-text">
+                {todo.content}
+                <span className="visually-hidden"> ({STATUS_WORDS[todo.status] ?? todo.status})</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

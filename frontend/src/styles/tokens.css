@@ -1,0 +1,154 @@
+/*
+ * Canyas design tokens. The brand: teal #00ffff, dark blue #00649a, slate #3a4c59, light grey #d9d9d9, black.
+ * Pure teal is weak on white, so on light surfaces the accent is dark blue and teal is kept for glow and accents;
+ * on dark surfaces teal carries the accent itself.
+ *
+ * Light is the default. Dark applies when the system asks for it (unless the user chose light), or when the user
+ * chose dark (data-theme on <html>).
+ */
+
+:root {
+  /* Brand */
+  --canyas-teal: #00ffff;
+  --canyas-blue: #00649a;
+  --canyas-slate: #3a4c59;
+  --canyas-grey: #d9d9d9;
+  --canyas-black: #000000;
+  --canyas-ink: #0a1720;
+
+  /* Type */
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --leading: 1.55;
+
+  /* Space and shape */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --sidebar-width: 264px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 120ms;
+  --duration: 200ms;
+
+  /* Light theme */
+  color-scheme: light;
+  --bg: #f4f7f8;
+  --surface: #ffffff;
+  --surface-2: #eef3f5;
+  --surface-3: #e3eaee;
+  --border: #d9d9d9;
+  --border-strong: #b9c4cb;
+  --text: #0a1720;
+  --text-muted: #3a4c59;
+  --text-subtle: #5d6f7c;
+  --accent: #00649a;
+  --accent-hover: #004f7a;
+  --accent-soft: #e0f0f8;
+  --accent-contrast: #ffffff;
+  --glow: rgba(0, 255, 255, 0.55);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #00649a, 0 0 12px 2px rgba(0, 255, 255, 0.45);
+  --link: #00649a;
+  --success: #12795a;
+  --success-soft: #e2f4ec;
+  --warning: #8a5a00;
+  --warning-soft: #fdf1d8;
+  --danger: #b3261e;
+  --danger-soft: #fbe7e5;
+  --user-bubble: #00649a;
+  --user-bubble-text: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(10, 23, 32, 0.06), 0 1px 1px rgba(10, 23, 32, 0.04);
+  --shadow-md: 0 6px 20px -8px rgba(10, 23, 32, 0.18), 0 2px 6px rgba(10, 23, 32, 0.06);
+
+  /* The sidebar is dark ink in both themes: the brand's teal reads best there */
+  --side-bg: #0a1720;
+  --side-surface: #12242f;
+  --side-border: #1f3646;
+  --side-text: #e6eff3;
+  --side-muted: #93a8b6;
+  --side-active-bg: rgba(0, 255, 255, 0.09);
+  --side-active-text: #00ffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #071118;
+    --surface: #0d1b24;
+    --surface-2: #12242f;
+    --surface-3: #183040;
+    --border: #22394a;
+    --border-strong: #335266;
+    --text: #e6eff3;
+    --text-muted: #a9bcc8;
+    --text-subtle: #84a0b0;
+    --accent: #00ffff;
+    --accent-hover: #7affff;
+    --accent-soft: rgba(0, 255, 255, 0.1);
+    --accent-contrast: #000000;
+    --glow: rgba(0, 255, 255, 0.6);
+    --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px #00ffff, 0 0 14px 2px rgba(0, 255, 255, 0.5);
+    --link: #5ce8f5;
+    --success: #4fd1a5;
+    --success-soft: rgba(79, 209, 165, 0.12);
+    --warning: #f2c063;
+    --warning-soft: rgba(242, 192, 99, 0.12);
+    --danger: #ff8a80;
+    --danger-soft: rgba(255, 138, 128, 0.12);
+    --user-bubble: #00649a;
+    --user-bubble-text: #ffffff;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px -10px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --side-bg: #040b10;
+    --side-surface: #0b1821;
+    --side-border: #17293a;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #071118;
+  --surface: #0d1b24;
+  --surface-2: #12242f;
+  --surface-3: #183040;
+  --border: #22394a;
+  --border-strong: #335266;
+  --text: #e6eff3;
+  --text-muted: #a9bcc8;
+  --text-subtle: #84a0b0;
+  --accent: #00ffff;
+  --accent-hover: #7affff;
+  --accent-soft: rgba(0, 255, 255, 0.1);
+  --accent-contrast: #000000;
+  --glow: rgba(0, 255, 255, 0.6);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px #00ffff, 0 0 14px 2px rgba(0, 255, 255, 0.5);
+  --link: #5ce8f5;
+  --success: #4fd1a5;
+  --success-soft: rgba(79, 209, 165, 0.12);
+  --warning: #f2c063;
+  --warning-soft: rgba(242, 192, 99, 0.12);
+  --danger: #ff8a80;
+  --danger-soft: rgba(255, 138, 128, 0.12);
+  --user-bubble: #00649a;
+  --user-bubble-text: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -10px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --side-bg: #040b10;
+  --side-surface: #0b1821;
+  --side-border: #17293a;
+}

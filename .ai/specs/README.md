@@ -28,6 +28,7 @@ Detailed when started, not before. Change a spec when the work teaches something
 | 06 | [package-checks](06-package-checks.md) | Mechanical checks (every task has Verify, `Read:` links resolve, SKILL.md size, no decisions inside the skill, every step has a done-condition) and the `.ai/questions.md` return path | done (live check passed) |
 | 07 | [behaviour-evals](07-behaviour-evals.md) | Real-model cases over several trials, run before and after each change from 02 on | done (baseline recorded) |
 | 08 | [chat-history](08-chat-history.md) | The conversation, the waiting card and the to-dos survive a reload, in any browser | done (live check passed) |
+| 09 | [kanya-chat](09-kanya-chat.md) | The chat as Kanya's: sidebar, side panel, input bar, reply tools, reader, voice (OpenAI), Stop | done (live check passed) |
 
 ## Borrowed practice
 

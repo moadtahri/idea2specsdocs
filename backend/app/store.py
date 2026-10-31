@@ -84,6 +84,20 @@ def _connect() -> sqlite3.Connection:
             UNIQUE (project_id, message_id)
         )"""
     )
+    # A reply's rating (spec 09, after Kanya's CH-1228): one per reply, known by the SHA-256 of its trimmed text.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS reply_feedback (
+            project_id TEXT NOT NULL,
+            reply_hash TEXT NOT NULL,
+            rating TEXT NOT NULL,
+            reasons TEXT NOT NULL DEFAULT '[]',
+            note TEXT NOT NULL DEFAULT '',
+            reply TEXT NOT NULL,
+            prompt TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (project_id, reply_hash)
+        )"""
+    )
     conn.execute(
         """CREATE TABLE IF NOT EXISTS chat_state (
             project_id TEXT PRIMARY KEY,
@@ -410,6 +424,7 @@ def delete_project(project_id: str) -> bool:
         conn.execute("DELETE FROM attachments WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM chat_messages WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM chat_state WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM reply_feedback WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     return True
 
@@ -471,6 +486,64 @@ def chat_history(project_id: str) -> dict:
         "pending": json.loads(state["pending"]) if state else None,
         "todos": json.loads(state["todos"]) if state else [],
     }
+
+
+def reply_hash(text: str) -> str:
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+def rate_reply(
+    project_id: str,
+    rating: str,
+    reply: str,
+    prompt: str = "",
+    reasons: list[str] | None = None,
+    note: str = "",
+) -> dict:
+    key = reply_hash(reply)
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO reply_feedback"
+            " (project_id, reply_hash, rating, reasons, note, reply, prompt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                project_id,
+                key,
+                rating,
+                json.dumps(reasons or []),
+                note,
+                reply,
+                prompt,
+                _utcnow_iso(),
+            ),
+        )
+    return {"reply_hash": key, "rating": rating, "reasons": reasons or []}
+
+
+def ratings(project_id: str) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT reply_hash, rating, reasons FROM reply_feedback WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+    return [
+        {
+            "reply_hash": r["reply_hash"],
+            "rating": r["rating"],
+            "reasons": json.loads(r["reasons"]),
+        }
+        for r in rows
+    ]
+
+
+def withdraw_rating(project_id: str, key: str) -> bool:
+    with _connect() as conn:
+        return (
+            conn.execute(
+                "DELETE FROM reply_feedback WHERE project_id = ? AND reply_hash = ?",
+                (project_id, key),
+            ).rowcount
+            > 0
+        )
 
 
 def card_title(path: str) -> str:

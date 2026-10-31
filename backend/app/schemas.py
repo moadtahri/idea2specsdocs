@@ -104,3 +104,22 @@ class DocContent(BaseModel):
     slug: str
     title: str
     markdown: str
+
+
+class FeedbackInput(BaseModel):
+    """A rating of one of wizi's replies (spec 09); a bad one may say why."""
+
+    rating: Literal["good", "bad"]
+    reply: str = Field(min_length=1, max_length=60_000)
+    prompt: str = Field(default="", max_length=8000)
+    reasons: list[
+        Literal[
+            "not_accurate", "not_followed", "too_long", "too_short", "unsafe", "other"
+        ]
+    ] = Field(default_factory=list, max_length=6)
+    note: str = Field(default="", max_length=1000)
+
+
+class SpeakInput(BaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+    voice: str = Field(default="marin", pattern=r"^[a-z]{2,20}$")

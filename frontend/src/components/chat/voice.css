@@ -1,0 +1,95 @@
+/* The composer's "+" and voice buttons (D46), shared by every Kanya chat. */
+.add-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  flex: none;
+}
+.add-button:hover {
+  background: var(--surface-2);
+}
+.add-button:focus-within {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.voice-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.voice-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+}
+.voice-button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.voice-button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.voice-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.voice-start {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.voice-start:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+.voice-button.is-on {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.voice-button.is-on:not(.voice-start) {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.voice-caption {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-caption.is-problem {
+  color: #b3261e;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .voice-button.is-on {
+    animation: voice-breathe 1.8s ease-in-out infinite;
+  }
+  .voice-start.is-speaking svg path {
+    animation: voice-bars 0.9s ease-in-out infinite alternate;
+    transform-origin: center;
+  }
+}
+@keyframes voice-breathe {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+}
+@keyframes voice-bars {
+  to {
+    transform: scaleY(0.55);
+  }
+}

@@ -8,7 +8,8 @@ export default defineConfig({
     // WSL + Windows mount: native file watching doesn't fire, poll instead
     watch: { usePolling: true, interval: 500 },
     proxy: {
-      '/api': 'http://localhost:8000',
+      // ws: the voice relay (/api/voice/listen) is a WebSocket (spec 09).
+      '/api': { target: 'http://localhost:8000', ws: true },
     },
   },
 });

@@ -127,6 +127,19 @@
 - `GET …/docs/bundle` (the readable bundle) ends with `## Diagrams`: Mermaid build order (specs and cross-spec
   blockers) and decisions waiting on others, built from data when served (spec 05 T6).
 
+### 6d. Chat history, reply ratings, stop and voice (specs 08, 09)
+
+- `GET /api/projects/{id}/history` → `200 {messages: [{id, role, text}], pending, todos}`: the conversation as the
+  user saw it, the approval card waiting (or `null`) and the latest to-dos.
+- `POST /api/projects/{id}/stop` → `200 {stopped}`: ends wizi's running turn; approved work stays saved.
+- `GET /api/projects/{id}/feedback` → `200 {ratings: [{reply_hash, rating, reasons}]}`; `POST …/feedback`
+  `{rating: good|bad, reply, prompt?, reasons?, note?}` → `201` (one rating per reply, keyed by the SHA-256 of its
+  trimmed text); `DELETE …/feedback/{reply_hash}` → `204`.
+- `POST /api/voice/speak` `{text, voice?}` → `200 audio/pcm` (24 kHz, 16-bit, mono, streamed; `X-Audio-Rate`); `422`
+  when nothing is left to say after removing Markdown; `503` without the OpenAI key.
+- `WS /api/voice/listen`: the page sends 16-bit 24 kHz mono PCM and `{"type":"stop"}`; the server sends `ready`,
+  `partial`, `final`, `speech_started` and `error` messages. nginx upgrades this path.
+
 ### 7. Errors
 
 - `404` unknown project; `422` validation; `409` thread busy (one run per project at a time);

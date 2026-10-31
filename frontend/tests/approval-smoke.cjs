@@ -21,6 +21,8 @@ const assert = require('node:assert/strict');
     const json = (route, value) => route.fulfill({contentType: 'application/json', body: JSON.stringify(value)});
     await page.route('**/api/projects', route => json(route, [{project_id: 'approval-test', title: 'Approval regression', updated_at: new Date().toISOString()}]));
     await page.route('**/api/projects/approval-test/docs', route => json(route, {docs: []}));
+    await page.route('**/api/projects/approval-test/history', route => json(route, {messages: [], pending: null, todos: []}));
+    await page.route('**/api/projects/approval-test/feedback', route => json(route, {ratings: []}));
     // A complete empty state, as the API returns: the brief panel reads items, findings and evidence.
     await page.route('**/api/projects/approval-test/quality?*', route => json(route, {
       brief: {status: 'approved', revision: 'r1', brief: {vertical: 'Software', service: 'Personal tasks'}, missing: []},
@@ -56,7 +58,7 @@ const assert = require('node:assert/strict');
       return route.fulfill({contentType: 'text/event-stream', body: [...chunks, {type: 'done', thread_id: 'approval-test'}].map(event => `data: ${JSON.stringify(event)}\n\n`).join('')});
     });
     await page.goto(process.env.ITOS_TEST_URL || 'http://127.0.0.1:8080');
-    await page.getByLabel('Current project').selectOption('approval-test');
+    await page.locator('a[href="#approval-test"]').click();
     const input = page.getByRole('textbox', {name: 'Message', exact: true});
     await input.fill('Draft my PRD');
     await page.getByRole('button', {name: 'Send', exact: true}).click();
@@ -75,8 +77,8 @@ const assert = require('node:assert/strict');
     assert.equal(calls, 3);
     await input.fill('Show an example');
     await page.getByRole('button', {name: 'Send', exact: true}).click();
-    await page.locator('.msg.agent .codeblock').waitFor();
-    await page.waitForFunction(() => document.querySelector('.agent-status span:last-child')?.textContent === 'Finished');
+    await page.locator('.msg.msg-kanya .codeblock').waitFor();
+    await page.locator('.status-pill[title="Finished"]').waitFor();
     assert.equal(await actions.count(), 0, 'Code examples must not trigger approval');
     await page.evaluate(() => { window.failNextChat = true; });
     await input.fill('Continue');
@@ -86,7 +88,7 @@ const assert = require('node:assert/strict');
     await page.getByRole('button', {name: 'Resend', exact: true}).click();
     await approve.waitFor();
     assert.equal(calls, 5);
-    assert.equal(await page.locator('.msg.user').count(), 5, 'Retry must preserve the existing user message');
+    assert.equal(await page.locator('.msg.msg-user').count(), 5, 'Retry must preserve the existing user message');
     await approve.click();
     const save = page.getByRole('button', {name: 'Approve & save', exact: true});
     await save.waitFor();

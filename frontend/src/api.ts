@@ -71,12 +71,6 @@ export interface AttachmentMeta {
   created_at: string;
 }
 
-export interface StreamingToken {
-  token: string;
-  websocket_url: string;
-  sample_rate: number;
-}
-
 export interface TodoItem {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
@@ -154,6 +148,8 @@ export const api = {
     fetch(`/api/projects/${projectId}/questionnaire/answers`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markdown }),
     }).then(json),
+  stopTurn: (projectId: string): Promise<{ stopped: boolean }> =>
+    fetch(`/api/projects/${projectId}/stop`, { method: 'POST' }).then(json),
   history: (projectId: string): Promise<{ messages: ChatMsg[]; pending: InterruptEvent | null; todos: TodoItem[] }> =>
     fetch(`/api/projects/${projectId}/history`).then(json),
   listDocs: (projectId: string): Promise<{ docs: DocMeta[] }> =>
@@ -169,15 +165,6 @@ export const api = {
     });
     return json(res);
   },
-  transcribe: async (blob: Blob, filename = 'audio.webm', signal?: AbortSignal): Promise<{ text: string }> => {
-    const fd = new FormData();
-    fd.append('file', blob, filename);
-    const res = await fetch('/api/transcribe', { method: 'POST', body: fd, signal });
-    return json(res);
-  },
-  streamingToken: async (signal?: AbortSignal): Promise<StreamingToken> =>
-    fetch('/api/transcribe/token', { method: 'POST', signal, cache: 'no-store' }).then(json),
-
   /** POST /api/chat and yield parsed SSE events. */
   async *streamChat(
     projectId: string,
