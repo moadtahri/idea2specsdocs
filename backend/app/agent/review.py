@@ -1,14 +1,31 @@
 """Separate semantic reviewer with validated citations and revision-bound results."""
 
 import asyncio
+import json
 import logging
 from uuid import uuid4
+
+from pydantic import ValidationError
 
 from .. import quality
 from .. import quality_store as qs
 from ..quality_models import SKILL_IDS, ReviewDraft, now
 from .llm import build_llm
 from .quality_skills import load_skill
+
+
+def decoded(value):
+    """Lists and objects the model sent as JSON text, decoded (as with propose_work_item, spec 07 run 1)."""
+    if isinstance(value, str) and value.strip()[:1] in ("[", "{"):
+        try:
+            return decoded(json.loads(value))
+        except ValueError:
+            return value
+    if isinstance(value, dict):
+        return {key: decoded(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [decoded(item) for item in value]
+    return value
 
 
 async def run_review(project_id: str, environment: str = "production") -> dict:
@@ -70,7 +87,7 @@ async def run_review(project_id: str, environment: str = "production") -> dict:
             ]
             if len(calls) != 1:
                 raise ValueError("Reviewer must return exactly one structured review")
-            draft = ReviewDraft.model_validate(calls[0]["args"])
+            draft = ReviewDraft.model_validate(decoded(calls[0]["args"]))
             report.update(
                 summary=draft.summary, checks_completed=draft.checks_completed
             )
@@ -103,8 +120,17 @@ async def run_review(project_id: str, environment: str = "production") -> dict:
             if not report["errors"]:
                 report["status"] = "complete"
         except Exception as exc:  # noqa: BLE001 — retain drafts if any review provider fails
+            # Which fields failed, never their content (documents may be sensitive).
+            where = (
+                ", ".join(
+                    ".".join(str(part) for part in error["loc"]) + f" ({error['type']})"
+                    for error in exc.errors()[:5]
+                )
+                if isinstance(exc, ValidationError)
+                else ""
+            )
             logging.getLogger("itos.review").warning(
-                "Review failed: %s", type(exc).__name__
+                "Review failed: %s %s", type(exc).__name__, where
             )
             report["status"] = "failed"
             report["summary"] = (

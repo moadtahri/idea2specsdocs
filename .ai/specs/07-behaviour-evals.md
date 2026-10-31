@@ -123,5 +123,15 @@ Real Muse model, 2026-10-31. Each run fixed what the one before found.
   its card. The pinned line now follows any approved save, documents included: what was saved and that no card waits
   (specs also get the next file to write). The six smoke scripts pass again; three had fakes older than the brief
   panel and one stopped a voice note after 0 ms.
-- Still open: a tool or format slips into a spec in about one run in three. Next: name it in the grader's report
-  with the line it came from, then decide whether the rule or the grader is wrong.
+- Runs 6-11 (specs, 3 trials each), 2026-10-31. The grader now prints the spec line behind each flag. Read
+  that way, `httpx` (FastAPI's test client), TOML (ruff's settings file) and YAML (GitHub Actions, Compose) were
+  parts of confirmed choices, not new ones: the grader accepts them when the choice that needs them is named, and the
+  rule tells wizi to say so. `psycopg` once and `requirements.txt` once were genuine misses. Stops after an approval
+  were traced one by one: the pinned line looked only at the last tool result (a step with settle calls then a
+  write), then only at the step right after the save (wizi updated its to-dos first), and wizi sometimes ignored it.
+  It is now enforced: when wizi ends a specs-stage turn with specs left, no card waiting and no decision open, the
+  app sends it back (at most twice since the last save or user message; the second time "describing it is not
+  writing it"). The independent review now decodes JSON-text arguments and logs which fields failed.
+- Run 11 (after all of it): specs 3/3 on every check, 18 of 18 approvals led straight to the next card.
+- Still open: a spec occasionally uses another task-heading format; the package checks catch it as a blocker and the
+  review stage repairs it.

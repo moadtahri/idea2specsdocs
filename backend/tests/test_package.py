@@ -377,3 +377,170 @@ def test_a_small_change_is_one_standalone_ticket(client, project):
     assert '  sticket_sms_reminders["Ticket: SMS reminders"]' in diagrams.build_order(
         project
     )
+
+
+def test_ending_right_after_a_saved_spec_sends_wizi_back_once(
+    client, project, monkeypatch
+):
+    import asyncio
+    from typing import ClassVar
+
+    from langchain.messages import AIMessage, ToolMessage
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langgraph.types import Command
+
+    from app.agent import factory
+    from app.agent.factory import scoped_env
+
+    directory = ready_project(client, project)
+    write_spec(directory, "README.md", PLAN)
+    write_spec(directory, "agents.md", "# Conventions\n")
+
+    class Scripted(BaseChatModel):
+        replies: ClassVar[list] = []
+        seen: ClassVar[list] = []
+
+        @property
+        def _llm_type(self):
+            return "scripted"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            Scripted.seen.append(list(messages))
+            return ChatResult(
+                generations=[ChatGeneration(message=Scripted.replies.pop(0))]
+            )
+
+    def write(name, call_id):
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_file",
+                    "args": {"file_path": f"/specs/{name}", "content": "# spec\n"},
+                    "id": call_id,
+                }
+            ],
+        )
+
+    stale = "Please approve 00-foundation on its card."
+    Scripted.replies[:] = [
+        write("00-foundation.md", "w1"),
+        AIMessage(content=stale),
+        write("01-booking-core.md", "w2"),
+    ]
+    monkeypatch.setattr(factory, "build_llm", Scripted)
+    config = {"configurable": {"thread_id": project}}
+
+    async def run():
+        with scoped_env(directory):
+            graph, manager = await factory.build_agent(
+                directory, store.checkpoint_path(project)
+            )
+            try:
+                await graph.ainvoke({"messages": [("user", "Write the specs")]}, config)
+                return await graph.ainvoke(
+                    Command(resume={"decisions": [{"type": "approve"}]}), config
+                )
+            finally:
+                await manager.__aexit__(None, None, None)
+
+    state = asyncio.run(run())
+    [card] = state[
+        "__interrupt__"
+    ]  # sent back once, wizi wrote the next spec instead of stopping
+    assert (
+        card.value["action_requests"][0]["args"]["file_path"]
+        == "/specs/01-booking-core.md"
+    )
+    notes = [
+        m
+        for m in Scripted.seen[-1]
+        if getattr(m, "additional_kwargs", {}).get(stages.NUDGE)
+    ]
+    assert (
+        len(notes) == 1
+        and "Continue now: write `/specs/01-booking-core.md`" in notes[0].content
+    )
+    assert any(
+        isinstance(m, ToolMessage) and "/specs/00-foundation.md" in str(m.content)
+        for m in Scripted.seen[-1]
+    )
+
+
+def test_the_continue_note_fires_once_and_only_in_the_specs_stage(client, project):
+    from langchain.messages import AIMessage, HumanMessage, ToolMessage
+
+    directory = ready_project(client, project)
+    write_spec(directory, "README.md", PLAN)
+    write_spec(directory, "agents.md")
+    saved = ToolMessage(
+        content="Updated file /specs/agents.md", tool_call_id="w1", name="write_file"
+    )
+    todos = ToolMessage(
+        content="Updated todo list", tool_call_id="t1", name="write_todos"
+    )
+    ended = AIMessage(content="Approve the plan?")
+    run = [HumanMessage("Write the specs"), saved, todos, ended]
+    assert stages.continue_after_save(directory, run).startswith(
+        "[The app: `/specs/agents.md` is saved"
+    )
+    # The pinned line also outlives the to-do update that followed the save.
+    assert "no card is waiting" in stages.stage_text(directory, run[:-1])
+    note = HumanMessage(content="[The app: …]", additional_kwargs={stages.NUDGE: True})
+    second = stages.continue_after_save(
+        directory, [*run, note, AIMessage(content="00-foundation sets up the app.")]
+    )
+    assert second.startswith(
+        "[The app: describing `/specs/00-foundation.md` is not writing it."
+    )
+    twice = [
+        *run,
+        note,
+        AIMessage(content="It covers the scaffold."),
+        note,
+        AIMessage(content="Still waiting"),
+    ]
+    assert (
+        stages.continue_after_save(directory, twice) == ""
+    )  # at most two per save: never a loop
+    # Ending on a promise before any file exists is sent back too (run 10).
+    promised = stages.continue_after_save(
+        directory, [HumanMessage("thanks"), AIMessage(content="Writing it now:")]
+    )
+    assert promised.startswith(
+        "[The app: Nothing is waiting on the user. Continue now: write `/specs/00-foundation.md`"
+    )
+    # An open decision for the user is a real stop.
+    from app import quality_store as qs
+    from app.quality_models import WorkItemInput
+
+    qs.propose_item(
+        project,
+        WorkItemInput(
+            kind="product_decision",
+            title="Cancel window",
+            detail="Up to when?",
+            affected_docs=["prd"],
+        ),
+    )
+    assert stages.continue_after_save(directory, run) == ""
+    qs.answer_item(project, qs.items(project)[0].id, "24 hours before")
+    # A later save in the same turn (approvals add no user message) gets its own nudge.
+    again = ToolMessage(
+        content="Updated file /specs/00-foundation.md",
+        tool_call_id="w2",
+        name="write_file",
+    )
+    later = [*run, note, note, again, AIMessage(content="Approve 00-foundation?")]
+    assert stages.continue_after_save(directory, later).startswith(
+        "[The app: `/specs/00-foundation.md` is saved"
+    )
+    write_spec(directory, "00-foundation.md")
+    write_spec(
+        directory, "01-booking-core.md"
+    )  # nothing left to write: never sent back
+    assert stages.continue_after_save(directory, run) == ""

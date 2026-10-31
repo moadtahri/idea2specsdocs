@@ -113,7 +113,18 @@ def test_what_a_named_choice_needs_is_not_a_new_decision():
         docs_text="",
         register_text="",
     )
-    assert sorted(cases.unnamed_choices(trial)) == ["httpx", "toml"]  # nothing names FastAPI or ruff
+    assert sorted(cases.unnamed_choices(trial)) == [
+        "httpx",
+        "toml",
+    ]  # nothing names FastAPI or ruff
+    ci = specs_trial(
+        spec_text="`.github/workflows/ci.yml` runs pytest",
+        docs_text="GitHub Actions CI",
+        register_text="",
+    )
+    assert cases.unnamed_choices(ci) == [
+        "pytest"
+    ]  # YAML is what GitHub Actions reads; pytest is still a choice
     named = {
         **trial,
         "register_text": "Linter: ruff (confirmed)",

@@ -259,8 +259,12 @@ def continues_after_approval(trial: dict) -> Result:
 
 
 # What a named choice needs to work belongs to that choice (run 6): FastAPI's test client needs httpx, and ruff reads
-# its settings only from a TOML file. Counted as named only when the choice that needs it is named.
-NEEDED_BY = {"httpx": ("fastapi",), "toml": ("ruff",)}
+# its settings only from a TOML file, GitHub Actions and Compose read only YAML. Counted as named only when the choice that needs it is named.
+NEEDED_BY = {
+    "httpx": ("fastapi",),
+    "toml": ("ruff",),
+    "yaml": ("github actions", "compose"),
+}
 
 
 def unnamed_choices(trial: dict) -> list[str]:

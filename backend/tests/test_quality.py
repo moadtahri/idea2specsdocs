@@ -498,3 +498,33 @@ def test_delete_removes_quality_register(client, project):
     assert qs.rows(project, "brief")
     assert client.delete(f"/api/projects/{project}").status_code == 204
     assert not qs.rows(project, "brief")
+
+
+def test_review_arguments_sent_as_json_text_are_decoded():
+    # The model sends lists as JSON text (spec 07): decode before validating, as propose_work_item does.
+    import json
+
+    args = {
+        "summary": "Two gaps.",
+        "checks_completed": json.dumps(list(SKILL_IDS)),
+        "findings": json.dumps(
+            [
+                {
+                    "category": "product-completeness",
+                    "severity": "warning",
+                    "impact": "implementation",
+                    "title": "No cancel window",
+                    "detail": "The PRD does not say when owners may cancel.",
+                    "recommendation": "Decide the window.",
+                    "affected_docs": ["prd"],
+                    "citations": [{"slug": "prd", "line": 3, "quote": "Owners cancel"}],
+                }
+            ]
+        ),
+    }
+    draft = ReviewDraft.model_validate(review.decoded(args))
+    assert (
+        draft.checks_completed == list(SKILL_IDS)
+        and draft.findings[0].citations[0].line == 3
+    )
+    assert review.decoded("[not json") == "[not json"
