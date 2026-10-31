@@ -21,7 +21,13 @@ const assert = require('node:assert/strict');
     const json = (route, value) => route.fulfill({contentType: 'application/json', body: JSON.stringify(value)});
     await page.route('**/api/projects', route => json(route, [{project_id: 'approval-test', title: 'Approval regression', updated_at: new Date().toISOString()}]));
     await page.route('**/api/projects/approval-test/docs', route => json(route, {docs: []}));
-    await page.route('**/api/projects/approval-test/quality?*', route => json(route, {brief: {status: 'approved', brief: {vertical: 'Software', service: 'Personal tasks'}, missing: []}}));
+    // A complete empty state, as the API returns: the brief panel reads items, findings and evidence.
+    await page.route('**/api/projects/approval-test/quality?*', route => json(route, {
+      brief: {status: 'approved', revision: 'r1', brief: {vertical: 'Software', service: 'Personal tasks'}, missing: []},
+      review_status: 'not_reviewed', spec_revision: 's1', ready_for_implementation: false, implementation_verified: false,
+      ready_for_production: false, verification_note: '', items: [], frontier: [], findings: [], last_review: null,
+      evidence: [], required_test_ids: [], required_launch_ids: [], security_coverage: [],
+    }));
     const wording = 'Please use the **Approve & save / Request changes buttons** on the PRD card to approve — I’ll start Doc 2 (Technical Spike) once you do. &#x20;';
     let calls = 0;
     let failedApproval;

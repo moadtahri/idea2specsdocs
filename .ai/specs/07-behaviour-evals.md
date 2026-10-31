@@ -119,5 +119,9 @@ Real Muse model, 2026-10-31. Each run fixed what the one before found.
 - Run 5 (3 trials each, after those fixes): repo-reader 3/3 on every check; specs: continues 3/3, package without
   blockers 3/3, reaches review 3/3, decides nothing new 2/3 (`toml` once).
 - `questions-back` (2 trials): 2/2 on every check.
+- Browser pass, 2026-10-31: after a typed "looks good, thanks" saved the PRD, wizi still said the draft was waiting on
+  its card. The pinned line now follows any approved save, documents included: what was saved and that no card waits
+  (specs also get the next file to write). The six smoke scripts pass again; three had fakes older than the brief
+  panel and one stopped a voice note after 0 ms.
 - Still open: a tool or format slips into a spec in about one run in three. Next: name it in the grader's report
   with the line it came from, then decide whether the rule or the grader is wrong.

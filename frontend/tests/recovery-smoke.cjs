@@ -33,6 +33,13 @@ const http = require('node:http');
     const json = (route, value) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(value) });
     await page.route('**/api/projects', (route) => json(route, [{ project_id: 'test', title: 'Todo app', updated_at: new Date().toISOString() }]));
     await page.route('**/api/projects/test/docs', (route) => json(route, { docs: [] }));
+    // The brief panel loads on every project; an empty state keeps it quiet (it shows an error when this fails).
+    await page.route('**/api/projects/test/quality?*', (route) => json(route, {
+      brief: { status: 'approved', revision: 'r1', brief: { vertical: 'Software', service: 'Personal tasks' }, missing: [] },
+      review_status: 'not_reviewed', spec_revision: 's1', ready_for_implementation: false, implementation_verified: false,
+      ready_for_production: false, verification_note: '', items: [], frontier: [], findings: [], last_review: null,
+      evidence: [], required_test_ids: [], required_launch_ids: [], security_coverage: [],
+    }));
     let uploads = 0;
     await page.route('**/api/projects/test/uploads', (route) => {
       uploads++;
@@ -82,7 +89,7 @@ const http = require('node:http');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await page.getByText('Reading your attached notes…', { exact: true }).waitFor();
     finish(true);
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByTitle('Remove this failed message from the current chat').click();
     assert.equal(await page.getByText('A message to delete', { exact: true }).count(), 0);
     assert.equal(await page.locator('.error').count(), 0);
     assert.equal(await page.getByText('Your notes describe a simple personal task list.').count(), 1);

@@ -296,8 +296,17 @@ def test_right_after_a_saved_spec_wizi_is_told_to_write_the_next(client, project
     )
     text = stages.stage_text(directory, [HumanMessage("Write the specs"), saved])
     assert text.endswith(
-        "The user approved `/specs/agents.md` and it is saved: no card is waiting. Write `/specs/00-foundation.md` "
-        "now, in this turn, after one line on what it covers. Do not ask whether to continue."
+        "The user approved `/specs/agents.md` and it is saved: no card is waiting for it. Write "
+        "`/specs/00-foundation.md` now, in this turn, after one line on what it covers. Do not ask whether to continue."
+    )
+    # A document gets the same fact, without the push to write on (documents pause one by one).
+    doc = ToolMessage(
+        content="Updated file /docs/prd.md", tool_call_id="w3", name="write_file"
+    )
+    after_doc = stages.stage_text(directory, [doc])
+    assert (
+        "The user approved `/docs/prd.md` and it is saved: no card is waiting for it."
+        in after_doc
     )
     failed = ToolMessage(
         content="Error: /specs/agents.md",

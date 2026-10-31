@@ -9,6 +9,7 @@ be folded away by compaction nor be mistaken for the user's words.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -59,16 +60,19 @@ def remaining_specs(project_dir: Path) -> str:
     )
 
 
-def just_saved_spec(messages: list) -> str:
-    """The spec file the last tool result saved, when the run is resuming right after an approval."""
+SAVED_PATH = re.compile(r"(/(?:docs|specs)/[\w.\-/]+?)[`'\".,]?(?:\s|$)")
+
+
+def just_saved(messages: list) -> str:
+    """The document or spec the last tool result saved: the run is resuming right after the user approved it."""
     last = messages[-1] if messages else None
     if (
         isinstance(last, ToolMessage)
         and last.name in ("write_file", "edit_file")
         and last.status != "error"
-        and "/specs/" in str(last.content)
+        and (found := SAVED_PATH.search(str(last.content)))
     ):
-        return str(last.content).rsplit("/specs/", 1)[1].split()[0].strip("`'\".,")
+        return found.group(1)
     return ""
 
 
@@ -77,15 +81,21 @@ def stage_text(project_dir: Path, messages: list | None = None) -> str:
     texts = [load_core_file(name) for name in stage_files(stage, intake(project_dir))]
     if stage == "specs":
         texts.append(remaining_specs(project_dir))
-        saved = just_saved_spec(messages or [])
-        left = specs.missing(project_dir)
-        if saved and left:
-            # Pinned when it applies (spec 07, run 4): after an approval, wizi often ended the turn asking the user to
-            # approve the card they had just approved.
-            texts.append(
-                f"The user approved `/specs/{saved}` and it is saved: no card is waiting. Write `/specs/{left[0]}` now, "
-                "in this turn, after one line on what it covers. Do not ask whether to continue."
+    if saved := just_saved(messages or []):
+        # Pinned when it applies (spec 07, run 4 and the UI pass): right after an approval wizi often ended the turn
+        # asking the user to approve the card they had just approved.
+        line = (
+            f"The user approved `{saved}` and it is saved: no card is waiting for it."
+        )
+        left = specs.missing(project_dir) if stage == "specs" else []
+        if left:
+            line += (
+                f" Write `/specs/{left[0]}` now, in this turn, after one line on what it covers. "
+                "Do not ask whether to continue."
             )
+        else:
+            line += " Say it is saved; never ask the user to approve it again."
+        texts.append(line)
     return "\n\n".join(texts)
 
 

@@ -126,6 +126,8 @@ const assert = require('node:assert/strict');
     const sessionsBeforeFallback = wsSessions;
     await start();
     await page.getByText('Recording a voice note — transcription starts when you stop', { exact: true }).waitFor();
+    // Speak for a moment: a note stopped within milliseconds holds no audio and is rightly reported as empty.
+    await page.waitForTimeout(1200);
     await page.getByRole('button', { name: 'Stop', exact: true }).click();
     await page.waitForFunction(() => (document.querySelector('textarea[aria-label="Message"]').value.match(/Whole recording after interruption\./g) || []).length === 2);
     assert.equal(fallbackCalls, 2);
