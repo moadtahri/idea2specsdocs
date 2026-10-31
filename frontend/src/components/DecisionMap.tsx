@@ -1,8 +1,10 @@
-import type { KeyboardEvent } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 import type { WorkItem } from '../api';
 
 // The decision register drawn as a map (after mattpocock/skills' wayfinder): each decision one row below the
 // deepest decision blocking it, arrows from blocker to dependent. The frontier (open, every blocker resolved) glows.
+// Motion (styles.css, off under prefers-reduced-motion): the map draws in row by row, frontier nodes breathe and
+// ripple, light flows along each arrow from a settled decision into one it unlocked, and the stars twinkle.
 
 const WIDTH = 640;
 const ROW = 96;
@@ -63,6 +65,7 @@ export default function DecisionMap({ items, frontier, selected, onSelect }: {
   })));
   const height = TOP * 2 + Math.max(0, ...depth.values()) * ROW + LABEL;
   const open = new Set(frontier);
+  const byStatus = new Map(items.map(item => [item.id, item.status]));
   const stars = Array.from({length: 36}, (_, i) => ({x: (i * 137.5) % WIDTH, y: (i * 89.3 + 17) % height, r: 0.5 + (i % 3) * 0.35}));
   const keyed = (id: string) => (event: KeyboardEvent) => {
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(id); }
@@ -75,27 +78,38 @@ export default function DecisionMap({ items, frontier, selected, onSelect }: {
           <path d="M 0 0 L 10 5 L 0 10 z" className="map-arrow" />
         </marker>
       </defs>
-      {stars.map((star, i) => <circle key={i} className="map-star" cx={star.x} cy={star.y} r={star.r} />)}
+      {stars.map((star, i) => <circle key={i} className="map-star" cx={star.x} cy={star.y} r={star.r}
+        style={{animationDelay: `${(i * 0.37) % 4}s`, animationDuration: `${3 + (i % 4)}s`}} />)}
       {items.flatMap(item => (item.blocked_by ?? []).filter(blocker => position.has(blocker)).map(blocker => {
         const from = position.get(blocker)!;
         const to = position.get(item.id)!;
         const end = to.y - 14;
-        return <path key={`${blocker}-${item.id}`} className="map-edge" markerEnd="url(#map-arrow)"
-          d={`M ${from.x} ${from.y + 12} C ${from.x} ${from.y + ROW / 2}, ${to.x} ${end - ROW / 2}, ${to.x} ${end}`} />;
+        const d = `M ${from.x} ${from.y + 12} C ${from.x} ${from.y + ROW / 2}, ${to.x} ${end - ROW / 2}, ${to.x} ${end}`;
+        // Unlocked: the blocker is settled and this decision can be made now; light flows along the arrow.
+        const unlocked = byStatus.get(blocker) === 'resolved' && open.has(item.id);
+        const delay = {animationDelay: `${(depth.get(blocker) ?? 0) * 0.18 + 0.15}s`};
+        return <g key={`${blocker}-${item.id}`}>
+          <path className={`map-edge${unlocked ? ' unlocked' : ''}`} markerEnd="url(#map-arrow)" d={d} pathLength={1} style={delay} />
+          {unlocked && <path className="map-flow" d={d} pathLength={1} />}
+        </g>;
       }))}
       {items.map((item, index) => {
         const {x, y} = position.get(item.id)!;
         const state = nodeState(item, open);
         const labelY = index % 2 && (rows.get(depth.get(item.id) ?? 0)?.length ?? 0) > 2 ? -20 : 26;
         return <g key={item.id} transform={`translate(${x} ${y})`} role="button" tabIndex={0}
+          style={{'--row': depth.get(item.id) ?? 0} as CSSProperties}
           className={`map-node ${state} owner-${item.owner_type ?? 'stakeholder'}${selected === item.id ? ' selected' : ''}`}
           aria-label={`${item.title}: ${stateLabels[state]}, ${ownerLabels[item.owner_type ?? 'stakeholder']}`}
           aria-pressed={selected === item.id}
           onClick={() => onSelect(item.id)} onKeyDown={keyed(item.id)}>
           <title>{`${item.title} · ${stateLabels[state]}`}</title>
-          {state === 'frontier' && <circle className="ring" r={17} />}
-          <circle className="core" r={state === 'frontier' ? 10 : 7} />
-          <text y={labelY} textAnchor="middle">{short(item.title)}</text>
+          <g className="node-body">
+            {state === 'frontier' && <><circle className="ring" r={12} /><circle className="ring late" r={12} /></>}
+            <circle className="halo" r={16} />
+            <circle className="core" r={state === 'frontier' ? 10 : 7} />
+            <text y={labelY} textAnchor="middle">{short(item.title)}</text>
+          </g>
         </g>;
       })}
     </svg>

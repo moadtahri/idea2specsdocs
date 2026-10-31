@@ -195,25 +195,51 @@ button.ghost { background: transparent; border: 1px solid var(--line); color: va
   background: radial-gradient(ellipse at 50% 0%, #17203a 0%, #090c16 70%); }
 .decision-map svg { display: block; width: 100%; height: auto; }
 .map-star { fill: #cdd6ff; opacity: .35; }
-.map-edge { fill: none; stroke: #8f98ad; stroke-width: 1.2; opacity: .55; }
+.map-edge { fill: none; stroke: #8f98ad; stroke-width: 1.2; opacity: .55; transition: stroke .6s ease, opacity .6s ease; }
+.map-edge.unlocked { stroke: var(--accent); opacity: .8; }
+.map-flow { fill: none; stroke: #cfe0ff; stroke-width: 2; stroke-linecap: round; opacity: 0; pointer-events: none; }
 .map-arrow { fill: #8f98ad; }
 .owner-stakeholder { --owner: var(--accent); }
 .owner-default { --owner: #f2b56b; }
 .owner-repo { --owner: var(--good); }
 .map-node { cursor: pointer; outline: none; }
-.map-node .core { fill: var(--owner); stroke: transparent; stroke-width: 2; }
-.map-node .ring { fill: none; stroke: var(--owner); stroke-width: 1.5; opacity: .5; }
+.map-node .node-body { transform-box: fill-box; transform-origin: center; transition: transform .25s ease; }
+.map-node:hover .node-body, .map-node:focus-visible .node-body { transform: scale(1.12); }
+.map-node .core { fill: var(--owner); stroke: transparent; stroke-width: 2;
+  transition: fill .7s ease, opacity .7s ease, r .5s ease, filter .7s ease; }
+.map-node .halo { fill: var(--owner); opacity: 0; transition: opacity .7s ease; }
+.map-node .ring { fill: none; stroke: var(--owner); stroke-width: 1.5; opacity: 0; }
 .map-node.frontier .core { filter: drop-shadow(0 0 5px var(--owner)) drop-shadow(0 0 12px var(--owner)); }
+.map-node.frontier .halo { opacity: .12; }
+.map-node.frontier .ring { opacity: .45; }
 .map-node.waiting .core { fill: #0b0f1c; stroke: var(--owner); stroke-width: 1.5; }
 .map-node.resolved .core { fill: #dfe4ef; opacity: .45; }
 .map-node.deferred .core { fill: #0b0f1c; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 2; }
-.map-node text { fill: var(--text); font-size: 11px; }
+.map-node text { fill: var(--text); font-size: 11px; transition: fill .7s ease; }
 .map-node.resolved text, .map-node.deferred text { fill: var(--muted); }
 .map-node:focus-visible .core, .map-node.selected .core { stroke: #ffffff; stroke-width: 2.5; }
+/* Motion: only for people who have not asked their system to reduce it. */
 @media (prefers-reduced-motion: no-preference) {
-  .map-node.frontier .ring { animation: map-pulse 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .map-star { animation: map-twinkle 4s ease-in-out infinite; }
+  /* On the inner group: the outer one is positioned by its transform attribute. Backwards fill only, so hover still scales. */
+  .map-node .node-body { animation: map-arrive .6s cubic-bezier(.2, .8, .2, 1.2) backwards; animation-delay: calc(var(--row, 0) * .18s); }
+  .map-edge { stroke-dasharray: 1; stroke-dashoffset: 1; animation: map-draw .8s ease-out forwards; }
+  .map-node.frontier .core { animation: map-breathe 3.2s ease-in-out infinite; }
+  .map-node.frontier .halo { animation: map-halo 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .map-node.frontier .ring { animation: map-ripple 3.2s cubic-bezier(.25, .6, .35, 1) infinite; transform-box: fill-box; transform-origin: center; }
+  .map-node.frontier .ring.late { animation-delay: 1.6s; }
+  .map-flow { stroke-dasharray: .06 .94; animation: map-flow 2.4s ease-in-out infinite; }
 }
-@keyframes map-pulse { 0%, 100% { opacity: .2; transform: scale(1); } 50% { opacity: .7; transform: scale(1.18); } }
+@keyframes map-twinkle { 0%, 100% { opacity: .15; } 50% { opacity: .6; } }
+@keyframes map-arrive { from { opacity: 0; transform: translateY(6px) scale(.6); } to { opacity: 1; transform: none; } }
+@keyframes map-draw { to { stroke-dashoffset: 0; } }
+@keyframes map-breathe {
+  0%, 100% { filter: drop-shadow(0 0 4px var(--owner)) drop-shadow(0 0 9px var(--owner)); }
+  50% { filter: drop-shadow(0 0 8px var(--owner)) drop-shadow(0 0 20px var(--owner)); }
+}
+@keyframes map-halo { 0%, 100% { opacity: .08; transform: scale(.9); } 50% { opacity: .22; transform: scale(1.15); } }
+@keyframes map-ripple { 0% { opacity: .55; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(2.6); } }
+@keyframes map-flow { 0% { stroke-dashoffset: 1; opacity: 0; } 15% { opacity: .95; } 85% { opacity: .95; } 100% { stroke-dashoffset: 0; opacity: 0; } }
 .map-legend { display: flex; flex-wrap: wrap; gap: .4rem .9rem; padding: .45rem .7rem; font-size: .75rem; color: var(--muted); }
 .map-legend .swatch { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .3rem; vertical-align: middle; }
 .map-legend .swatch.frontier { background: var(--accent); box-shadow: 0 0 6px var(--accent); }

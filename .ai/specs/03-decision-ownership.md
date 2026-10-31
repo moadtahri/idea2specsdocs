@@ -93,7 +93,10 @@ blocked outlined; clicking a node opens its card below the map. Placed in the br
 **Files:** `frontend/src/components/DecisionMap.tsx`, `frontend/src/components/QualityPanel.tsx`,
 `frontend/src/api.ts`, `frontend/src/styles.css`
 **Verify:** `npm run build` in `frontend/` (WSL); Manual: the map in a running app.
-**Status:** built, not verified: WSL lost access to `/mnt/c` (Input/output error) before the build could run, and Windows has no Node. Checked by hand against tsconfig (ES2020, strict). Run `npm run build` and look at the map once WSL is back.
+**Status:** done, 2026-10-31. Seen in the running app (browser pass from a Linux copy): the frontier glows, waiting
+decisions sit under their blockers, a questionnaire's answers dim the settled ones and light the next. Animated at the
+user's request: rows draw in, frontier nodes breathe and ripple, light flows along each arrow from a settled decision
+into one it unlocked, stars twinkle; all of it off under prefers-reduced-motion (checked frame by frame).
 
 ### T4: Live check and contract
 
