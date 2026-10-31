@@ -137,6 +137,21 @@ straight to the next card.
 **Status:** done, 2026-10-30 (113 passed); live 2026-10-31: 11/11 approvals with specs left led to the next card or a
 question (spec 07, run 3)
 
+### T9: Standalone tickets
+
+**Do:** A small change to an existing codebase (feature or cleanup mode, one session of work) is one ticket,
+`ticket-<slug>.md`, instead of numbered specs: one `### T1` with the usual fields, linked from the plan. Plan
+parsing, the stage, the package, its checks, returned questions and the build-order diagram accept it; the skill's
+task, check and commit procedures run it like a spec (branch `spec/ticket-<slug>`, subject `ticket-<slug>: <title>`).
+An idea project still starts with `00-foundation`. (After mattpocock's tickets: one session of work that "stands
+alone or hangs off a spec".)
+**Files:** `backend/app/specs.py`, `backend/app/package_checks.py`, `backend/app/diagrams.py`,
+`backend/app/agent/skills/wizi-core/stages/specs.md`, `backend/app/package_templates/SKILL.md`,
+`backend/app/package_templates/procedures/{task,check,commit}.md`, `backend/tests/test_package.py`
+**Verify:** `uv run pytest -q tests/test_package.py`
+**Blocked by:** none
+**Status:** done, 2026-10-31 (165 passed)
+
 ### T5: Package checks (spec 06)
 
 ### T6: Human bundle with Mermaid diagrams
@@ -145,7 +160,9 @@ question (spec 07, run 3)
 (specs, arrows from cross-spec `Blocked by:`) and the decisions that wait on others (register edges, settled green,
 open amber). Added when served, not cached, so a new spec or decision shows at once. The app draws any Mermaid block
 with `mermaid` 11.17.2 (approved 2026-10-31), loaded only when a diagram is on screen, strict security level, dark
-theme; if it cannot draw one, the source shows.
+theme; if it cannot draw one, the source shows. `npm audit` (2026-10-31): 2 low, one cause: KaTeX < 0.18.2 (prototype
+pollution) inside mermaid 11; the fix is mermaid 12, a major release 18 days old. Accepted for now: KaTeX only renders
+`$$` maths in a diagram, mermaid runs in strict mode, and diagrams come from itos or wizi. Revisit with mermaid 12.
 **Files:** `backend/app/diagrams.py`, `backend/app/main.py`, `frontend/src/components/Markdown.tsx`,
 `frontend/src/components/MermaidDiagram.tsx`, `frontend/package.json`, `backend/tests/test_diagrams.py`
 **Verify:** `uv run pytest -q tests/test_diagrams.py`; `npm run build`

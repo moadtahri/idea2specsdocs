@@ -299,6 +299,11 @@ def test_right_after_a_saved_spec_wizi_is_told_to_write_the_next(client, project
         "The user approved `/specs/agents.md` and it is saved: no card is waiting for it. Write "
         "`/specs/00-foundation.md` now, in this turn, after one line on what it covers. Do not ask whether to continue."
     )
+    # Settled decisions in the same step come after the write: the write still counts.
+    settled = ToolMessage(
+        content='{"status": "resolved"}', tool_call_id="s1", name="settle_decision"
+    )
+    assert "no card is waiting" in stages.stage_text(directory, [saved, settled])
     # A document gets the same fact, without the push to write on (documents pause one by one).
     doc = ToolMessage(
         content="Updated file /docs/prd.md", tool_call_id="w3", name="write_file"
@@ -316,3 +321,59 @@ def test_right_after_a_saved_spec_wizi_is_told_to_write_the_next(client, project
     )
     for messages in ([HumanMessage("hi")], [saved, HumanMessage("thanks")], [failed]):
         assert "no card is waiting" not in stages.stage_text(directory, messages)
+
+
+TICKET = """# Ticket: SMS reminders
+
+## Why
+Owners forget visits (FR-7).
+
+### T1: Send a reminder the day before
+**Do:** A daily job texts each owner booked for tomorrow (FR-7).
+**Files:** `app/reminders.py`, `tests/test_reminders.py`
+**Read:** `.ai/handover/prd.md#overview`
+**Verify:** `pytest -q tests/test_reminders.py`
+**Blocked by:** none
+**Status:** todo
+"""
+
+
+def test_a_small_change_is_one_standalone_ticket(client, project):
+    from app import diagrams, package, package_checks
+
+    directory = ready_project(client, project)
+    write_spec(
+        directory,
+        "README.md",
+        "1. [ticket-sms-reminders.md](ticket-sms-reminders.md): one session\n",
+    )
+    write_spec(directory, "agents.md", "# Conventions\n")
+    assert specs.missing(directory) == ["ticket-sms-reminders.md"]
+    assert stages.current_stage(directory) == "specs"
+    write_spec(directory, "ticket-sms-reminders.md", TICKET)
+    assert stages.current_stage(directory) == "review"
+
+    files = package.package_files(project)
+    assert ".ai/specs/ticket-sms-reminders.md" in files
+    assert (
+        "`.ai/specs/ticket-sms-reminders.md` | Ticket: SMS reminders"
+        in files[".claude/skills/build-feature-planning/SKILL.md"]
+    )
+    assert package_checks.findings(files) == []
+    broken = {
+        **files,
+        ".ai/specs/ticket-sms-reminders.md": TICKET.replace(
+            "**Verify:** `pytest -q tests/test_reminders.py`\n", ""
+        ),
+    }
+    assert any(
+        "T1 has no Verify" in f["message"] for f in package_checks.findings(broken)
+    )
+
+    question = "### Q1: Which SMS provider?\n\n- **Spec and task:** ticket-sms-reminders T1\n- **Status:** open\n"
+    [asked] = package_checks.parse_questions(question)
+    assert (asked["spec"], asked["task"]) == ("ticket-sms-reminders", "T1")
+    assert package_checks.task_docs(directory, "ticket-sms-reminders", "T1") == ["prd"]
+    assert '  sticket_sms_reminders["Ticket: SMS reminders"]' in diagrams.build_order(
+        project
+    )

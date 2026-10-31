@@ -2,7 +2,8 @@
 
 Three separate passes, so one does not colour the next.
 
-1. **Scope.** Run `python .claude/skills/{{skill}}/scripts/check_scope.py .ai/specs/<NN>-<name>.md T<n>` (add
+1. **Scope.** Run `python .claude/skills/{{skill}}/scripts/check_scope.py .ai/specs/<NN>-<name>.md T<n>` (a ticket:
+   `.ai/specs/ticket-<name>.md T1`; add
    `--base <ref>` to compare with a commit other than `HEAD`). It lists files changed outside the task's Files and
    dependency manifests that changed. Every line it prints needs a reason or a revert.
 2. **Spec.** Does the diff do what Do says, cite its requirement IDs, and respect Must, Must not and Out of scope?

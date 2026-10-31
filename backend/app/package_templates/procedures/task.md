@@ -1,6 +1,7 @@
 # Run one task
 
-Input: a spec and a task, such as `01 T2`.
+Input: a spec and a task, such as `01 T2`, or a standalone ticket and its one task, such as `ticket-sms-reminders T1`.
+A ticket is read and run exactly like a spec.
 
 1. **Check git before anything else.** The task's check compares with the last commit, so it starts from a clean
    tree on the spec's branch.

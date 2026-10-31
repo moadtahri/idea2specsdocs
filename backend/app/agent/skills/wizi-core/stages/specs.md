@@ -19,6 +19,33 @@ a health check), so every later Verify command really runs; **cleanup** starts w
 record current behaviour at the highest seam available), and every later task is verified by those tests still
 passing; **feature** starts at `01`.
 
+**A small change is one ticket, not specs.** In the feature or cleanup mode, when the whole change fits one fresh
+session (one vertical task, a few files, one Verify), write the plan with a single line linking
+`ticket-<slug>.md`, then `/specs/agents.md`, then `/specs/ticket-<slug>.md` instead of numbered specs:
+
+```markdown
+# Ticket: <what changes, as a noun phrase>
+
+## Why
+One or two sentences, citing requirement IDs.
+
+## Context
+- **Read first:** `.ai/handover/<slug>.md#<anchor>`: why it matters here
+- **Decisions:** <decision title>: <what was decided>
+
+## Constraints
+**Must:** … **Must not:** … **Out of scope:** …
+
+### T1: <the change>
+**Do:** … **Files:** … **Read:** … **Verify:** … **Blocked by:** none **Status:** todo
+
+## Done
+- [ ] the full test command passes
+```
+
+When it would need a second task, it is not a ticket: write numbered specs. An idea project never starts with a
+ticket: it needs `00-foundation` first.
+
 ## 2. Slice the work
 
 - A spec is one slice of the product a reviewer can follow, usually two to six tasks. If it would touch more than
@@ -68,12 +95,14 @@ The deliverable, concrete enough to check when done.
 
 ## 4. Rules for every spec
 
-- **Decide nothing new.** Every choice comes from the documents, the brief or a settled decision. When a task needs a
-  decision they leave open, record it with `propose_work_item`, tell the user, and leave the task out until it is
+- **Decide nothing new.** Every choice comes from the documents, the brief or a settled decision. When a task needs
+  a decision they leave open, record it with `propose_work_item`, tell the user, and leave the task out until it is
   settled. A library, framework, file format or tool the documents do not name (an ORM, YAML for a config file, a
   rate-limiting package, and project plumbing too: the dependency file such as `requirements.txt` or
-  `pyproject.toml`, the server that runs the app such as uvicorn, the linter) is such a decision: record it with `owner_type` `default` and your recommendation, so the
-  user confirms it before a spec relies on it.
+  `pyproject.toml`, the server that runs the app such as uvicorn, the linter) is such a decision: record it with
+  `owner_type` `default` and your recommendation, so the user confirms it before a spec relies on it. What a
+  confirmed choice needs in order to work is part of it (the test client a framework requires, the file its linter
+  reads settings from): name that reason in the spec instead of asking again.
 - **`Read:` names the smallest section that answers the task:** `.ai/handover/<slug>.md#<anchor>`, the anchor being
   the section heading in lower case, spaces as hyphens, punctuation dropped. Never "read all documents".
 - **Every task can be verified.** Prefer a command to a manual check; a manual check says what to open, what to do

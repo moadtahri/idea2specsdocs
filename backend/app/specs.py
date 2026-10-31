@@ -2,7 +2,8 @@
 
 They live in ``projects/<id>/specs/``. ``README.md`` is the plan: it links every spec by file name, in order.
 ``agents.md`` holds the project conventions that become ``AGENTS.md`` in the package. The specs stage lasts
-until the plan, the conventions and every spec the plan links exist.
+until the plan, the conventions and every spec the plan links exist. A small change to an existing codebase can be
+one standalone ticket instead, ``ticket-<slug>.md``: one task, the same fields, linked from the plan like a spec.
 """
 
 from __future__ import annotations
@@ -12,8 +13,8 @@ from pathlib import Path
 
 PLAN = "README.md"
 CONVENTIONS = "agents.md"
-SPEC_FILE = re.compile(r"^\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
-LINKED = re.compile(r"\b(\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md)\b")
+SPEC_FILE = re.compile(r"^(?:\d{2}|ticket)-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
+LINKED = re.compile(r"\b((?:\d{2}|ticket)-[a-z0-9]+(?:-[a-z0-9]+)*\.md)\b")
 
 
 def specs_dir(project_dir: Path) -> Path:

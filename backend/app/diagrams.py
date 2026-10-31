@@ -31,7 +31,9 @@ def build_order(project_id: str) -> str | None:
     for path in specs.spec_files(directory):
         if path.name in (specs.PLAN, specs.CONVENTIONS):
             continue
-        number = path.name[:2]
+        number = (
+            path.name[:2] if path.name[:2].isdigit() else path.stem
+        )  # a ticket stands alone
         text = path.read_text(encoding="utf-8")
         heading = next(
             (line[2:].strip() for line in text.splitlines() if line.startswith("# ")),
@@ -46,7 +48,8 @@ def build_order(project_id: str) -> str | None:
         return None
     lines = ["flowchart LR"]
     lines += [
-        f"  s{number}[{label(title)}]" for number, title in sorted(numbered.items())
+        f"  s{number.replace('-', '_')}[{label(title)}]"
+        for number, title in sorted(numbered.items())
     ]
     lines += [f"  s{a} --> s{b}" for a, b in sorted(edges) if a in numbered]
     return "\n".join(lines)

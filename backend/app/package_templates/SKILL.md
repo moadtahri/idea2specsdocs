@@ -1,6 +1,6 @@
 ---
 name: {{skill}}
-description: Builds {{project}} from its specs, one task per session. Use to run, check, commit or refine a task from .ai/specs/ ("/{{skill}} task 01 T2", "/{{skill}} check 01 T2", "/{{skill}} commit 01 T2", "/{{skill}} refine 02").
+description: Builds {{project}} from its specs, one task per session. Use to run, check, commit or refine a task from .ai/specs/ ("/{{skill}} task 01 T2", "/{{skill}} check 01 T2", "/{{skill}} commit 01 T2", "/{{skill}} refine 02", or a standalone ticket: "/{{skill}} task ticket-<name> T1").
 ---
 
 # Building {{project}}
@@ -25,8 +25,9 @@ those decisions. It is how you work.
   nobody made, write the question in `.ai/questions.md` and tell the user. Never choose an answer yourself: these
   questions go back to the project owners.
 - **One branch per spec, one commit per task.** The branch is `spec/<NN>-<name>`; the commit subject is
-  `<NN>-T<n>: <task title>`. Start a task only from a clean tree, and commit only when the user asks. Never push,
-  amend, skip hooks, or discard the user's changes.
+  `<NN>-T<n>: <task title>`. A standalone ticket (`ticket-<name>.md`, one task) works the same: branch
+  `spec/ticket-<name>`, subject `ticket-<name>: <task title>`. Start a task only from a clean tree, and commit only
+  when the user asks. Never push, amend, skip hooks, or discard the user's changes.
 - **Trace requirement IDs** (FR-, NFR-, SEC-, API-, DB-, TC-) in tests and commit messages.
 - **Done means Verify passed**, not that the code looks right.
 

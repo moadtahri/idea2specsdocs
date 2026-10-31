@@ -17,13 +17,16 @@ from .schemas import DOC_SLUGS
 
 TASK_FIELDS = ("Do", "Files", "Read", "Verify", "Blocked by", "Status")
 SKILL_MAX_LINES = 200
-SPEC_PATH = re.compile(r"^\.ai/specs/(\d{2})-[a-z0-9-]+\.md$")
+# A spec is known by its number ("01"), a standalone ticket by its file name ("ticket-sms-reminders").
+SPEC_PATH = re.compile(r"^\.ai/specs/(?:(\d{2})-[a-z0-9-]+|(ticket-[a-z0-9-]+))\.md$")
 TASK_HEADING = re.compile(r"^###\s+(T\d+)\b.*$", re.MULTILINE)
 FIELD = re.compile(r"^\*\*([A-Za-z ]+):\*\*", re.MULTILINE)
 LINK = re.compile(r"`(\.ai/[^`#\s]+)(?:#([^`\s]+))?`")
 BLOCKER = re.compile(r"\b(?:(\d{2})[- ])?(T\d+)\b")
 REQUIREMENT_ID = re.compile(r"\b(?:FR|NFR|SEC|API|DB|TC)-\d+")
 FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.MULTILINE | re.DOTALL)
+# "01 T2", "01-T2" or "ticket-sms-reminders T1": the spec number or ticket name, then the task.
+TASK_REF = re.compile(r"\b(?:(\d{2}|ticket-[a-z0-9]+(?:-[a-z0-9]+)*?)[- ])?(T\d+)\b")
 QUESTION = re.compile(r"^###\s+(Q\d+):\s*(.+)$", re.MULTILINE)
 TEMPLATE_SECTION = re.compile(
     r"^##\s+Template\b.*?(?=^##\s|\Z)", re.MULTILINE | re.DOTALL
@@ -70,7 +73,7 @@ def findings(files: dict[str, str]) -> list[dict]:
         out.append({"severity": severity, "file": file, "message": message})
 
     spec_tasks = {
-        match.group(1): (path, tasks(text))
+        match.group(1) or match.group(2): (path, tasks(text))
         for path, text in sorted(files.items())
         if (match := SPEC_PATH.match(path))
     }
@@ -188,7 +191,7 @@ def parse_questions(markdown: str) -> list[dict]:
             continue
         if not fields.get("status", "open").casefold().startswith("open"):
             continue
-        reference = BLOCKER.search(fields.get("spec and task", ""))
+        reference = TASK_REF.search(fields.get("spec and task", ""))
         out.append(
             {
                 "id": head.group(1),
@@ -206,7 +209,7 @@ def parse_questions(markdown: str) -> list[dict]:
 def task_docs(project_dir: Path, spec_number: str, task_id: str) -> list[str]:
     """The documents a task's Read: cites, as slugs; empty when the task is not found."""
     for path in specs.spec_files(project_dir):
-        if path.name.startswith(f"{spec_number}-"):
+        if path.stem == spec_number or path.name.startswith(f"{spec_number}-"):
             fields = tasks(path.read_text(encoding="utf-8")).get(task_id, {})
             cited = re.findall(
                 r"\.ai/handover/([a-z0-9-]+)\.md", fields.get("Read", "")

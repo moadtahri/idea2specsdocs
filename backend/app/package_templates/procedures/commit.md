@@ -1,7 +1,7 @@
 # Commit one task
 
-Input: a spec and a task, such as `01 T2`. Run this only when the user asks for the commit, after they reviewed the
-check's findings.
+Input: a spec and a task, such as `01 T2`, or a ticket and its task, such as `ticket-sms-reminders T1`. Run this
+only when the user asks for the commit, after they reviewed the check's findings.
 
 1. **The task is done.** Its Status in the spec is `done, <date>` and the check ran
    ([check.md](check.md)). If either is missing, stop and say which.
@@ -10,9 +10,9 @@ check's findings.
 3. **Stage only the task.** `git add` each changed path in the task's Files, and the spec file. Never `git add -A` or
    `git add .`. Run `python .claude/skills/{{skill}}/scripts/check_scope.py .ai/specs/<NN>-<name>.md T<n>` again:
    anything it lists that the user did not accept in the check stays unstaged, and you say so.
-4. **Write the message.** The subject is `<NN>-T<n>: <task title>`, the title as the spec's `### T<n>:` heading
-   writes it. The body lists the requirement IDs the task covers (FR-, NFR-, SEC-, API-, DB-, TC-) and the Verify
-   result in one line:
+4. **Write the message.** The subject is `<NN>-T<n>: <task title>` (for a ticket, `ticket-<name>: <task title>`),
+   the title as the spec's `### T<n>:` heading writes it. The body lists the requirement IDs the task covers (FR-,
+   NFR-, SEC-, API-, DB-, TC-) and the Verify result in one line:
 
    ```text
    01-T2: Booking API

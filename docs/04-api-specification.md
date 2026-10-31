@@ -115,6 +115,8 @@
   `.ai/questions.md`, `.ai/README.md`, and the conventions as `AGENTS.md` + `CLAUDE.md` (intake `idea`) or
   `.ai/AGENTS.md` (`feature`, `cleanup`). `404` while no document exists. The skill also has
   `procedures/commit.md`: a branch per spec (`spec/<NN>-<name>`), one commit per task (`<NN>-T<n>: <title>`).
+  A small change to an existing codebase may be one standalone ticket, `.ai/specs/ticket-<slug>.md` (one task),
+  run like a spec: `/build-<project> task ticket-<slug> T1`.
 - `GET /api/projects/{id}/package/checks` → `200 {blockers, warnings, findings: [{severity, file, message}]}`: tasks
   missing Do/Files/Read/Verify/Blocked by/Status, `Read:` links to missing files or headings, unknown blockers, plan
   links without a spec, a skill over 200 lines or naming requirement IDs, procedures without "Done when", unfilled
